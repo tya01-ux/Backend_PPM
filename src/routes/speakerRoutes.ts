@@ -1,5 +1,5 @@
 import express from "express";
-import { getSpeakers, createSpeaker, showSpeaker, updateSpeaker, deleteSpeaker } from "../controllers/speakerController";
+import { getSpeakers, createSpeaker, showSpeaker, updateSpeaker, deleteSpeaker } from "../controllers/speakerController.js";
 
 const router = express.Router();
 

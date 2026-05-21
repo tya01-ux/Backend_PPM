@@ -1,0 +1,26 @@
+1.Schema
+-> Bluprint dari tabel aplikasi yang akan kita buat
+    a. categories
+        -id IntPrimaryKey AoutoIncrenment
+        -name String
+        -createdAt DateTime
+    b.events
+        id: Int IntPrimaryKey AoutoIncrenment
+        name: string
+        categoryId: Integer
+        dateEvent : DateTime
+        time: string;
+        description : String
+        location: string;
+    c.speakers
+        id: Int IntPrimaryKey AoutoIncrenment
+        name: string;
+        role: string;
+        image: string;
+        createAt: DateTima
+
+2. Migration
+    -> Proses mengubah s\Schema menjadi sebuah tabel, mengupdate atau menghapus data tabl
+3.ORM
+    -> Select * from events
+    -> events.findMany

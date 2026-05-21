@@ -2,9 +2,9 @@ import express from "express";
 import cors from "cors";
 
 // `import` statements for routes
-import eventRoutes from "./routes/eventRoute";
-import categoryRoutes from "./routes/categoryRoute";
-import speakerRoutes from "./routes/speakerRoutes";
+import eventRoutes from "./routes/eventRoute.js";
+import categoryRoutes from "./routes/categoryRoute.js";
+import speakerRoutes from "./routes/speakerRoutes.js";
 
 
 const app = express();
