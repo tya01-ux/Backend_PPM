@@ -2,9 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../lib/db.js";
 import bcrypt from "bcrypt";
 
-// ==========================
 // GET ALL USERS
-// ==========================
 export const getUsers = async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -18,7 +16,7 @@ export const getUsers = async (req: Request, res: Response) => {
       orderBy: {
         id: "desc",
       },
-    });
+    }); 
 
     return res.json(users);
   } catch (error) {
