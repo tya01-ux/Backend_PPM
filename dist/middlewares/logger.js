@@ -8,6 +8,6 @@ export const checkAdmin = (req, res, next) => {
     if (user.email !== namaEmailAdmin) {
         return res.status(403).json({ message: "Forbidden: Akses ditolak, khusus Admin!" });
     }
-    next(); // Lolos validasi, silakan lanjut proses CRUD data
+    next();
 };
 //# sourceMappingURL=logger.js.map
