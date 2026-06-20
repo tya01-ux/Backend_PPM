@@ -2,11 +2,11 @@ import express from "express";
 import cors from "cors";
 
 // `import` statements for routes
-import eventRoutes from "./routes/eventRoute.js";
-import categoryRoutes from "./routes/categoryRoute.js";
-import speakerRoutes from "./routes/speakerRoutes.js";
-import authRoutes from "./routes/authRoute.js";
-import userRoutes from "./routes/usersRouts.js";
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import courtRoutes from "./routes/courtRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
+import membershipRoutes from "./routes/membershipRoutes.js";
 
 const app = express();
 const port = 3000;
@@ -15,13 +15,13 @@ app.use(cors());
 app.use(express.json()); 
 
 app.get("/", (req, res) => {
-  res.send("Hello Railllway 2!");
+  res.send("Hello PPM!");
 });
 
 //  import dan gunakan routes
-app.use("/events", eventRoutes);
-app.use("/categories", categoryRoutes);
-app.use("/speakers", speakerRoutes);
+app.use("/courts", courtRoutes);
+app.use("/bookings", bookingRoutes);
+app.use("/memberships", membershipRoutes);
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 

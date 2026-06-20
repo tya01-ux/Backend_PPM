@@ -13,55 +13,80 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Category {
-  id        Int      @id @default(autoincrement())
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  events Event[]
-
-  @@map("categories")
-}
-
-model Event {
-  id          Int      @id @default(autoincrement())
-  name        String
-  categoryId  Int      @map("category_id")
-  location    String
-  dateEvent   DateTime @map("date_event")
-  description String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  category Category @relation(fields: [categoryId], references: [id])
-
-  @@map("events")
-}
-
-model Pembicara {
-  id        Int      @id @default(autoincrement())
-  name      String
-  role      String
-  image     String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("pembicaras")
-}
-
 model User {
-  id       Int    @id @default(autoincrement())
-  name     String
-  email    String @unique
+  id Int @id @default(autoincrement())
+  name String
+  email String @unique
   password String
-  foto     String?
-  createdAt DateTime @default(now()) @map("created_at") 
+  phone String?
+  role String @default("user")
 
-  @@map("users")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+  memberships UserMembership[]
 }
 
-model Role{
+model Court {
   id Int @id @default(autoincrement())
-  name String @unique
-  createdAt DateTime @default(now()) @map("created_at") 
+  name String
+  type String
+  price Int
+  description String?
+  image String?
 
-  @@map("roles")
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id Int @id @default(autoincrement())
+  bookingDate DateTime
+  startTime String
+  endTime String
+  status BookingStatus @default(pending)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  courtId Int
+
+  user User @relation(fields: [userId], references: [id])
+  court Court @relation(fields: [courtId], references: [id])
+}
+
+model Membership {
+  id Int @id @default(autoincrement())
+  name String
+  price Int
+  duration Int
+  description String?
+
+  users UserMembership[]
+}
+
+model UserMembership {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  membershipId Int
+
+  startDate DateTime
+  endDate DateTime
+
+  user User @relation(fields: [userId], references: [id])
+  membership Membership @relation(fields: [membershipId], references: [id])
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
 }
