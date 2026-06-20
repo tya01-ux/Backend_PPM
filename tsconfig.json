@@ -3,15 +3,12 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "esModuleInterop": true,
-
-    // Menggunakan kombinasi Node16/NodeNext yang fleksibel
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    
+    // Standar ketat NodeNext untuk ESModules
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "target": "es2022",
     "types": ["node"],
-
-    // Mengizinkan tsc melakukan build tanpa memaksa penulisan ekstensi .js palsu di kode .ts
-    "rewriteRelativeImportExtensions": true, 
 
     "sourceMap": true,
     "declaration": true,
