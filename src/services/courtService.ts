@@ -18,13 +18,14 @@ export const createCourt = async (data: {
     price: number;
     description?: string;
     image?: string;
+    isActive?: boolean;
 }) => {
     return await prisma.court.create({
         data,
     });
 };
 
-// Coust Update
+// Court Update
 export const updateCourtById = async (
     id: number,
     data: {
@@ -33,6 +34,7 @@ export const updateCourtById = async (
         price?: number;
         description?: string;
         image?: string;
+        isActive?: boolean;
     }
 ) => {
     return await prisma.court.update({
@@ -41,7 +43,7 @@ export const updateCourtById = async (
     });
 };
 
-// counst Delete
+// Court Delete
 export const deleteCourtById = async (id: number) => {
     return await prisma.court.delete({
         where: { id },
