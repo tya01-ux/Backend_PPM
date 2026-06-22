@@ -1,10 +1,12 @@
 import { Router } from "express";
-import { createUser } from "../controllers/userController.js";
+import { createUser, getUsers, updateUser, deleteUser } from "../controllers/userController.js";
 import { authenticate } from "../middlewares/authMiddleware.js";
 
 const router = Router();
 
-// Endpoint ini akan menjadi POST /api/users ketika di-mount di server.js
-router.post("/", authenticate, createUser); 
+router.get("/", authenticate, getUsers);       
+router.post("/", authenticate, createUser);     
+router.put("/:id", authenticate, updateUser);   
+router.delete("/:id", authenticate, deleteUser); 
 
 export default router;
