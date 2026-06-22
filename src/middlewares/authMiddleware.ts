@@ -6,50 +6,101 @@ export interface CustomRequest extends Request {
   user?: {
     userId: number;
     email?: string;
+    role?: string;
   };
 }
 
-export const authenticate = (req: CustomRequest, res: Response, next: NextFunction) => {
+// AUTHENTICATION
+export const authenticate = (
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthenticated, format tidak valid" });
+    return res.status(401).json({
+      message: "Unauthenticated, format token tidak valid",
+    });
   }
 
   const token = authHeader.split(" ")[1];
+
   if (!token) {
-    return res.status(401).json({ message: "Token tidak ditemukan" });
+    return res.status(401).json({
+      message: "Token tidak ditemukan",
+    });
+  }
+
+  const JWT_SECRET = process.env.JWT_SECRET;
+
+  if (!JWT_SECRET) {
+    return res.status(500).json({
+      message: "JWT_SECRET belum dikonfigurasi",
+    });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret_key") as { userId: number; email?: string };
-    req.user = decoded;
+    const decoded = jwt.verify(token, JWT_SECRET) as {
+      id: number;
+      email?: string;
+      role?: string;
+    };
+
+    const userData: CustomRequest['user'] = { userId: decoded.id };
+    if (decoded.email !== undefined) userData.email = decoded.email;
+    if (decoded.role !== undefined) userData.role = decoded.role;
+
+    req.user = userData;
+
     next();
   } catch (error) {
-    return res.status(403).json({ message: "Invalid token atau token kadaluarsa" });
+    return res.status(403).json({
+      message: "Token tidak valid atau sudah kadaluarsa",
+    });
   }
 };
 
-// PERBAIKAN MIDDLEWARE CHECK ADMIN: Ambil role langsung dari database menggunakan userId hasil decode token
-export const checkAdmin = async (req: CustomRequest, res: Response, next: NextFunction) => {
-  const userPayload = req.user;
-
-  if (!userPayload) {
-    return res.status(401).json({ message: "Unauthorized. Anda belum login" });
-  }
-
+// AUTHORIZATION ADMIN
+export const checkAdmin = async (
+  req: CustomRequest,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Cari data user di database untuk memastikan role aslinya adalah admin
+    if (!req.user) {
+      return res.status(401).json({
+        message: "Unauthorized. Silakan login terlebih dahulu",
+      });
+    }
+
     const dbUser = await prisma.user.findUnique({
-      where: { id: userPayload.userId }
+      where: {
+        id: req.user.userId,
+      },
+      select: {
+        role: true,
+      },
     });
 
-    if (!dbUser || dbUser.role.toLowerCase() !== "admin") {
-      return res.status(403).json({ message: "Forbidden: Akses ditolak, khusus Admin!" });
+    if (!dbUser) {
+      return res.status(401).json({
+        message: "User tidak ditemukan",
+      });
+    }
+
+    if (dbUser.role.toLowerCase() !== "admin") {
+      return res.status(403).json({
+        message: "Akses ditolak. Hanya admin yang dapat mengakses fitur ini",
+      });
     }
 
     next();
   } catch (error) {
-    return res.status(500).json({ message: "Terjadi kesalahan pada validasi admin" });
+    console.error("CHECK ADMIN ERROR:", error);
+
+    return res.status(500).json({
+      message: "Terjadi kesalahan saat validasi admin",
+    });
   }
 };
