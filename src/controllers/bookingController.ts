@@ -27,16 +27,27 @@ export const getBooking = async (
     res.json(booking);
 };
 
-export const addBooking = async (
-    req: Request,
-    res: Response
-) => {
-    const booking = await createBooking(req.body);
+export const addBooking = async (req: Request, res: Response) => {
+    try {
+        const { bookingDate, startTime, endTime, userId, courtId } = req.body;
+        
+        // Validasi dasar
+        if (!bookingDate || !startTime || !endTime || !userId || !courtId) {
+            return res.status(400).json({ message: "Semua field wajib diisi" });
+        }
 
-    res.status(201).json({
-        message: "Booking berhasil dibuat",
-        data: booking,
-    });
+        const booking = await createBooking({
+            ...req.body,
+            bookingDate: new Date(bookingDate),
+            userId: Number(userId),
+            courtId: Number(courtId)
+        });
+
+        res.status(201).json({ message: "Booking berhasil dibuat", data: booking });
+    } catch (error) {
+        console.error("Error Backend:", error);
+        res.status(500).json({ message: "Gagal membuat booking", error });
+    }
 };
 
 export const updateBooking = async (
