@@ -4,6 +4,7 @@ import {
   getBookingById,
   createBooking,
   cancelBooking,
+  updateBooking,
 } from "../services/bookingService.js";
 import { CustomRequest } from "../middlewares/authMiddleware.js";
 
@@ -102,6 +103,41 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
     return res.status(400).json({
       message: error.message,
     });
+  }
+};
+
+// UPDATE BOOKING (admin only)
+export const updateBookingHandler = async (
+  req: CustomRequest,
+  res: Response
+) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "ID booking tidak valid" });
+    }
+
+    // hanya admin yang boleh update
+    if (req.user?.role !== "admin") {
+      return res.status(403).json({ message: "Hanya admin yang bisa mengubah booking" });
+    }
+
+    const { courtId, startAt, endAt, notes, status } = req.body;
+
+    const result = await updateBooking(id, {
+      ...(courtId  && { courtId:  Number(courtId) }),
+      ...(startAt  && { startAt:  new Date(startAt) }),
+      ...(endAt    && { endAt:    new Date(endAt) }),
+      ...(notes    !== undefined && { notes }),
+      ...(status   && { status }),
+    });
+
+    return res.json({
+      message: "Booking berhasil diupdate",
+      data: result,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ message: error.message });
   }
 };
 

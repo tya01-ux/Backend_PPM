@@ -114,6 +114,86 @@ export const createBooking = async (data: {
   });
 };
 
+// UPDATE BOOKING (admin only)
+export const updateBooking = async (
+  id: number,
+  data: {
+    courtId?: number;
+    startAt?: Date;
+    endAt?: Date;
+    notes?: string;
+    status?: "pending" | "confirmed" | "cancelled" | "completed";
+  }
+) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { payment: true },
+  });
+
+  if (!booking) throw new Error("Booking tidak ditemukan");
+
+  // kalau ada perubahan waktu/court, recalculate harga
+  if (data.startAt || data.endAt || data.courtId) {
+    const startAt  = data.startAt  ?? booking.startAt;
+    const endAt    = data.endAt    ?? booking.endAt;
+    const courtId  = data.courtId  ?? booking.courtId;
+
+    const duration = Math.round(
+      (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60)
+    );
+    if (duration <= 0) throw new Error("Waktu tidak valid");
+
+    const court = await prisma.court.findUnique({ where: { id: courtId } });
+    if (!court || !court.isActive) throw new Error("Lapangan tidak tersedia");
+
+    // cek bentrok, skip booking ini sendiri
+    const conflict = await prisma.booking.findFirst({
+      where: {
+        courtId,
+        id: { not: id },
+        status: { notIn: ["cancelled"] },
+        AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
+      },
+    });
+    if (conflict) throw new Error("Jadwal lapangan sudah dibooking");
+
+    const courtPrice = court.price * duration;
+    const adminFee   = booking.payment?.adminFee ?? 2500;
+    const totalAmount = courtPrice + adminFee;
+
+    // update booking + recalculate payment sekaligus
+    return await prisma.$transaction([
+      prisma.booking.update({
+        where: { id },
+        data: {
+          courtId,
+          startAt,
+          endAt,
+          duration,
+          courtPrice,
+          notes:  data.notes  ?? booking.notes,
+          status: data.status ?? booking.status,
+        },
+      }),
+      ...(booking.payment ? [
+        prisma.payment.update({
+          where: { bookingId: id },
+          data: { courtPrice, totalAmount },
+        }),
+      ] : []),
+    ]);
+  }
+
+  // kalau cuma update notes/status aja
+  return await prisma.booking.update({
+    where: { id },
+    data: {
+      ...(data.notes  !== undefined && { notes: data.notes }),
+      ...(data.status !== undefined && { status: data.status }),
+    },
+  });
+};
+
 // CENCEL
 export const cancelBooking = async (id: number, userId: number, role: string) => {
   const booking = await prisma.booking.findUnique({
