@@ -1,7 +1,8 @@
-export declare const registerUser: (name: string, email: string, password: string, phone: string) => Promise<{
+export declare const registerUser: (name: string, email: string, password: string, phone?: string) => Promise<{
     id: number;
     name: string;
     email: string;
+    phone: string | null;
     role: string;
     createdAt: Date;
 }>;

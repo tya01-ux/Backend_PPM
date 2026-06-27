@@ -1,21 +1,17 @@
 export declare const getAllUsers: () => Promise<{
     name: string;
     email: string;
-    password: string;
     phone: string | null;
     role: string;
     createdAt: Date;
-    updatedAt: Date;
     id: number;
 }[]>;
 export declare const getUserById: (id: number) => Promise<{
     name: string;
     email: string;
-    password: string;
     phone: string | null;
     role: string;
     createdAt: Date;
-    updatedAt: Date;
     id: number;
 } | null>;
 export declare const updateUserById: (id: number, data: {
@@ -26,11 +22,9 @@ export declare const updateUserById: (id: number, data: {
 }) => Promise<{
     name: string;
     email: string;
-    password: string;
     phone: string | null;
     role: string;
     createdAt: Date;
-    updatedAt: Date;
     id: number;
 }>;
 export declare const deleteUserById: (id: number) => Promise<{

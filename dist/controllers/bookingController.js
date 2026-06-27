@@ -1,33 +1,54 @@
-import { getAllBookings, getBookingById, createBooking, updateBookingById, deleteBookingById, } from "../services/bookingService.js";
+import { getAllBookings, getBookingById, createBooking, cancelBooking, } from "../services/bookingService.js";
 export const getBookings = async (req, res) => {
-    const bookings = await getAllBookings();
-    res.json(bookings);
+    try {
+        const bookings = await getAllBookings(req.user?.userId, req.user?.role);
+        return res.json({ data: bookings });
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
 };
 export const getBooking = async (req, res) => {
-    const id = Number(req.params.id);
-    const booking = await getBookingById(id);
-    res.json(booking);
+    try {
+        const booking = await getBookingById(Number(req.params.id));
+        if (!booking)
+            return res.status(404).json({ message: "Booking tidak ditemukan" });
+        // user hanya bisa lihat booking sendiri
+        if (req.user?.role !== "admin" && booking.user.id !== req.user?.userId) {
+            return res.status(403).json({ message: "Akses ditolak" });
+        }
+        return res.json({ data: booking });
+    }
+    catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
 };
 export const addBooking = async (req, res) => {
-    const booking = await createBooking(req.body);
-    res.status(201).json({
-        message: "Booking berhasil dibuat",
-        data: booking,
-    });
+    try {
+        const { startAt, endAt, courtId, notes } = req.body;
+        if (!startAt || !endAt || !courtId) {
+            return res.status(400).json({ message: "startAt, endAt, courtId wajib diisi" });
+        }
+        const booking = await createBooking({
+            startAt: new Date(startAt),
+            endAt: new Date(endAt),
+            courtId: Number(courtId),
+            userId: req.user.userId,
+            notes,
+        });
+        return res.status(201).json({ message: "Booking berhasil dibuat", data: booking });
+    }
+    catch (error) {
+        return res.status(400).json({ message: error.message });
+    }
 };
-export const updateBooking = async (req, res) => {
-    const id = Number(req.params.id);
-    const booking = await updateBookingById(id, req.body);
-    res.json({
-        message: "Booking berhasil diupdate",
-        data: booking,
-    });
-};
-export const deleteBooking = async (req, res) => {
-    const id = Number(req.params.id);
-    await deleteBookingById(id);
-    res.json({
-        message: "Booking berhasil dihapus",
-    });
+export const cancelBookingHandler = async (req, res) => {
+    try {
+        await cancelBooking(Number(req.params.id), req.user.userId, req.user.role);
+        return res.json({ message: "Booking berhasil dibatalkan" });
+    }
+    catch (error) {
+        return res.status(400).json({ message: error.message });
+    }
 };
 //# sourceMappingURL=bookingController.js.map

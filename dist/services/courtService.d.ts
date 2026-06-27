@@ -26,6 +26,7 @@ export declare const createCourt: (data: {
     price: number;
     description?: string;
     image?: string;
+    isActive?: boolean;
 }) => Promise<{
     name: string;
     createdAt: Date;
@@ -43,6 +44,7 @@ export declare const updateCourtById: (id: number, data: {
     price?: number;
     description?: string;
     image?: string;
+    isActive?: boolean;
 }) => Promise<{
     name: string;
     createdAt: Date;

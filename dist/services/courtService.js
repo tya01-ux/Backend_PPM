@@ -14,14 +14,14 @@ export const createCourt = async (data) => {
         data,
     });
 };
-// Coust Update
+// Court Update
 export const updateCourtById = async (id, data) => {
     return await prisma.court.update({
         where: { id },
         data,
     });
 };
-// counst Delete
+// Court Delete
 export const deleteCourtById = async (id) => {
     return await prisma.court.delete({
         where: { id },

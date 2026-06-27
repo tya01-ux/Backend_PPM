@@ -3,8 +3,9 @@ export interface CustomRequest extends Request {
     user?: {
         userId: number;
         email?: string;
+        role?: string;
     };
 }
 export declare const authenticate: (req: CustomRequest, res: Response, next: NextFunction) => Response<any, Record<string, any>> | undefined;
-export declare const checkAdmin: (req: CustomRequest, res: Response, next: NextFunction) => Response<any, Record<string, any>> | undefined;
+export declare const checkAdmin: (req: CustomRequest, res: Response, next: NextFunction) => Promise<Response<any, Record<string, any>> | undefined>;
 //# sourceMappingURL=authMiddleware.d.ts.map
