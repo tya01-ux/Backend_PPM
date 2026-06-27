@@ -27,7 +27,7 @@ export const getRevenueReport = async ({ startDate, endDate, courtId }: RangePar
   );
   const avgPerDay = Math.round(totalRevenue / days);
 
-  // group by tanggal untuk grafik
+  // Group by tanggal untuk grafik
   const grouped: Record<string, number> = {};
   payments.forEach((p) => {
     const date = (p.confirmedAt ?? p.createdAt).toISOString().slice(0, 10);
@@ -38,7 +38,14 @@ export const getRevenueReport = async ({ startDate, endDate, courtId }: RangePar
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, total]) => ({ date, total }));
 
-  return { totalRevenue, totalBooking, avgPerDay, chart };
+  // ✅ Revenue per lapangan (untuk pie chart di frontend)
+  const byCourt: Record<string, number> = {};
+  payments.forEach((p) => {
+    const name = p.booking?.court?.name ?? `Court ${p.booking?.courtId}`;
+    byCourt[name] = (byCourt[name] || 0) + p.totalAmount;
+  });
+
+  return { totalRevenue, totalBooking, avgPerDay, chart, byCourt };
 };
 
 // ── LAPORAN BOOKING (status breakdown) ──
@@ -48,15 +55,20 @@ export const getBookingReport = async ({ startDate, endDate, courtId }: RangePar
       createdAt: { gte: startDate, lte: endDate },
       ...(courtId && { courtId }),
     },
-    include: { court: true },
+    include: {
+      court: true,
+    },
   });
 
   const totalBooking = bookings.length;
+
+  // Count booking per status
   const byStatus: Record<string, number> = {};
   bookings.forEach((b) => {
     byStatus[b.status] = (byStatus[b.status] || 0) + 1;
   });
 
+  // Count booking per court (jumlah booking, bukan revenue)
   const byCourt: Record<string, number> = {};
   bookings.forEach((b) => {
     const name = b.court.name;
