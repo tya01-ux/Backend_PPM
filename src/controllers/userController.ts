@@ -2,8 +2,8 @@ import { Request, Response } from "express";
 import { prisma } from "../lib/db.js";
 import bcrypt from "bcrypt";
 
-// GET USERS
-export const getUsers = async (req: Request, res: Response) => {
+// ===================== GET USERS =====================
+export const getUsers = async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -30,15 +30,19 @@ export const getUsers = async (req: Request, res: Response) => {
   }
 };
 
-// CREATE USER
+// ===================== CREATE USER =====================
 export const createUser = async (req: Request, res: Response) => {
   try {
     const { name, email, phone, role, password } = req.body;
 
+    if (!name || !email) {
+      return res.status(400).json({
+        message: "Nama dan email wajib diisi",
+      });
+    }
+
     const existingUser = await prisma.user.findUnique({
-      where: {
-        email,
-      },
+      where: { email },
     });
 
     if (existingUser) {
@@ -47,7 +51,10 @@ export const createUser = async (req: Request, res: Response) => {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password || "Password123!", 10);
+    const hashedPassword = await bcrypt.hash(
+      password || "Password123!",
+      10
+    );
 
     const newUser = await prisma.user.create({
       data: {
@@ -79,16 +86,21 @@ export const createUser = async (req: Request, res: Response) => {
   }
 };
 
-// UPDATE USER
+// ===================== UPDATE USER =====================
 export const updateUser = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        message: "ID tidak valid",
+      });
+    }
+
     const { name, email, phone, role } = req.body;
 
     const user = await prisma.user.findUnique({
-      where: {
-        id: Number(id),
-      },
+      where: { id },
     });
 
     if (!user) {
@@ -102,7 +114,7 @@ export const updateUser = async (req: Request, res: Response) => {
         where: {
           email,
           NOT: {
-            id: Number(id),
+            id,
           },
         },
       });
@@ -115,9 +127,7 @@ export const updateUser = async (req: Request, res: Response) => {
     }
 
     const updatedUser = await prisma.user.update({
-      where: {
-        id: Number(id),
-      },
+      where: { id },
       data: {
         name,
         email,
@@ -146,15 +156,19 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
-// DELETE USER
+// ===================== DELETE USER =====================
 export const deleteUser = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        message: "ID tidak valid",
+      });
+    }
 
     const user = await prisma.user.findUnique({
-      where: {
-        id: Number(id),
-      },
+      where: { id },
     });
 
     if (!user) {
@@ -170,9 +184,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     }
 
     await prisma.user.delete({
-      where: {
-        id: Number(id),
-      },
+      where: { id },
     });
 
     return res.status(200).json({

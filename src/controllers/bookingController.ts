@@ -5,65 +5,132 @@ import {
   createBooking,
   cancelBooking,
 } from "../services/bookingService.js";
-
 import { CustomRequest } from "../middlewares/authMiddleware.js";
 
+// GET ALL BOOKINGS
 export const getBookings = async (req: CustomRequest, res: Response) => {
   try {
     const bookings = await getAllBookings(req.user?.userId, req.user?.role);
-    return res.json({ data: bookings });
+
+    return res.json({
+      data: bookings,
+    });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 };
 
+// GET BOOKING BY ID
 export const getBooking = async (req: CustomRequest, res: Response) => {
   try {
-    const booking = await getBookingById(Number(req.params.id));
-    if (!booking) return res.status(404).json({ message: "Booking tidak ditemukan" });
+    const id = Number(req.params.id);
 
-    // user hanya bisa lihat booking sendiri
-    if (req.user?.role !== "admin" && booking.user.id !== req.user?.userId) {
-      return res.status(403).json({ message: "Akses ditolak" });
+    if (isNaN(id)) {
+      return res.status(400).json({
+        message: "ID booking tidak valid",
+      });
     }
 
-    return res.json({ data: booking });
+    const booking = await getBookingById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        message: "Booking tidak ditemukan",
+      });
+    }
+
+    // User hanya boleh melihat booking miliknya sendiri
+    if (
+      req.user?.role !== "admin" &&
+      booking.user.id !== req.user?.userId
+    ) {
+      return res.status(403).json({
+        message: "Akses ditolak",
+      });
+    }
+
+    return res.json({
+      data: booking,
+    });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: error.message,
+    });
   }
 };
 
+// CREATE BOOKING
 export const addBooking = async (req: CustomRequest, res: Response) => {
   try {
     const { startAt, endAt, courtId, notes, userId } = req.body;
 
     if (!startAt || !endAt || !courtId) {
-      return res.status(400).json({ message: "startAt, endAt, courtId wajib diisi" });
+      return res.status(400).json({
+        message: "startAt, endAt, dan courtId wajib diisi",
+      });
     }
 
-    // admin boleh booking-in atas nama user lain, user biasa cuma boleh atas nama sendiri
+    const courtIdNumber = Number(courtId);
+
+    if (isNaN(courtIdNumber)) {
+      return res.status(400).json({
+        message: "courtId tidak valid",
+      });
+    }
+
+    // Admin boleh membuat booking atas nama user lain
     const targetUserId =
-      req.user?.role === "admin" && userId ? Number(userId) : req.user!.userId;
+      req.user?.role === "admin" && userId
+        ? Number(userId)
+        : req.user!.userId;
 
     const booking = await createBooking({
       startAt: new Date(startAt),
       endAt: new Date(endAt),
-      courtId: Number(courtId),
+      courtId: courtIdNumber,
       userId: targetUserId,
       notes,
     });
 
-    return res.status(201).json({ message: "Booking berhasil dibuat", data: booking });
+    return res.status(201).json({
+      message: "Booking berhasil dibuat",
+      data: booking,
+    });
   } catch (error: any) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };
 
-export const cancelBookingHandler = async (req: CustomRequest, res: Response) => {
+// CANCEL BOOKING
+export const cancelBookingHandler = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
-    await cancelBooking(Number(req.params.id), req.user!.userId, req.user!.role!);
-    return res.json({ message: "Booking berhasil dibatalkan" });
+    const id = Number(req.params.id);
+
+    if (isNaN(id)) {
+      return res.status(400).json({
+        message: "ID booking tidak valid",
+      });
+    }
+
+    await cancelBooking(
+      id,
+      req.user!.userId,
+      req.user!.role!
+    );
+
+    return res.json({
+      message: "Booking berhasil dibatalkan",
+    });
   } catch (error: any) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };

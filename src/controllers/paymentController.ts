@@ -18,34 +18,61 @@ type PaymentRequestWithFile = CustomRequest & {
   };
 };
 
-export const getChannels = async (req: CustomRequest, res: Response) => {
+// ======================
+// GET PAYMENT CHANNELS
+// ======================
+export const getChannels = async (_req: CustomRequest, res: Response) => {
   try {
     const channels = await getPaymentChannels();
-    return res.json({ data: channels });
+
+    return res.status(200).json({
+      data: channels,
+    });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: "Gagal mengambil daftar metode pembayaran",
+      error: error.message,
+    });
   }
 };
 
+// ======================
+// GET PAYMENT DETAIL
+// ======================
 export const getPayment = async (req: CustomRequest, res: Response) => {
   try {
+    const bookingId = Number(req.params.bookingId);
+
     const payment = await getPaymentByBookingId(
-      Number(req.params.bookingId),
+      bookingId,
       req.user!.userId,
       req.user!.role!
     );
-    return res.json({ data: payment });
+
+    return res.status(200).json({
+      data: payment,
+    });
   } catch (error: any) {
-    return res.status(403).json({ message: error.message });
+    return res.status(403).json({
+      message: error.message,
+    });
   }
 };
 
-export const chooseChannel = async (req: CustomRequest, res: Response) => {
+// ======================
+// CHOOSE PAYMENT CHANNEL
+// ======================
+export const chooseChannel = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
     const { paymentChannelId, promoCode } = req.body;
 
     if (!paymentChannelId) {
-      return res.status(400).json({ message: "paymentChannelId wajib diisi" });
+      return res.status(400).json({
+        message: "paymentChannelId wajib diisi",
+      });
     }
 
     const payment = await choosePaymentChannel(
@@ -56,16 +83,29 @@ export const chooseChannel = async (req: CustomRequest, res: Response) => {
       promoCode
     );
 
-    return res.json({ message: "Metode pembayaran dipilih", data: payment });
+    return res.status(200).json({
+      message: "Metode pembayaran berhasil dipilih",
+      data: payment,
+    });
   } catch (error: any) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };
 
-export const uploadProof = async (req: PaymentRequestWithFile, res: Response) => {
+// ======================
+// UPLOAD PAYMENT PROOF
+// ======================
+export const uploadProof = async (
+  req: PaymentRequestWithFile,
+  res: Response
+) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: "File bukti wajib diupload" });
+      return res.status(400).json({
+        message: "File bukti pembayaran wajib diupload",
+      });
     }
 
     const result = await uploadPaymentProof(
@@ -75,72 +115,155 @@ export const uploadProof = async (req: PaymentRequestWithFile, res: Response) =>
       req.file.filename
     );
 
-    return res.json(result);
+    return res.status(200).json(result);
   } catch (error: any) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };
 
-export const confirm = async (req: CustomRequest, res: Response) => {
+// ======================
+// CONFIRM PAYMENT (ADMIN)
+// ======================
+export const confirm = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
     const result = await confirmPayment(Number(req.params.bookingId));
-    return res.json(result);
+
+    return res.status(200).json(result);
   } catch (error: any) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };
 
-export const reject = async (req: CustomRequest, res: Response) => {
+// ======================
+// REJECT PAYMENT (ADMIN)
+// ======================
+export const reject = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
     const { note } = req.body;
-    if (!note) return res.status(400).json({ message: "Note wajib diisi" });
 
-    const result = await rejectPayment(Number(req.params.bookingId), note);
-    return res.json(result);
-  } catch (error: any) {
-    return res.status(400).json({ message: error.message });
-  }
-};
-
-// ── ADMIN: kelola channel ──
-export const addChannel = async (req: PaymentRequestWithFile, res: Response) => {
-  try {
-    const { name, type, accountNumber, accountName } = req.body;
-    if (!name || !type) {
-      return res.status(400).json({ message: "name dan type wajib diisi" });
+    if (!note) {
+      return res.status(400).json({
+        message: "Note wajib diisi",
+      });
     }
 
-    // kalau ada file QR yang diupload
-    const qrImage = req.file ? `/uploads/${req.file.filename}` : req.body.qrImage;
+    const result = await rejectPayment(
+      Number(req.params.bookingId),
+      note
+    );
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+// ======================
+// CREATE PAYMENT CHANNEL
+// ======================
+export const addChannel = async (
+  req: PaymentRequestWithFile,
+  res: Response
+) => {
+  try {
+    const {
+      name,
+      type,
+      accountNumber,
+      accountName,
+    } = req.body;
+
+    if (!name || !type) {
+      return res.status(400).json({
+        message: "name dan type wajib diisi",
+      });
+    }
+
+    const qrImage = req.file
+      ? `/uploads/${req.file.filename}`
+      : req.body.qrImage;
 
     const channel = await createPaymentChannel({
-      name, type, accountNumber, accountName, qrImage,
+      name,
+      type,
+      accountNumber,
+      accountName,
+      qrImage,
     });
 
-    return res.status(201).json({ message: "Channel berhasil ditambahkan", data: channel });
+    return res.status(201).json({
+      message: "Channel pembayaran berhasil ditambahkan",
+      data: channel,
+    });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: "Gagal menambahkan channel pembayaran",
+      error: error.message,
+    });
   }
 };
 
-export const editChannel = async (req: PaymentRequestWithFile, res: Response) => {
+// ======================
+// UPDATE PAYMENT CHANNEL
+// ======================
+export const editChannel = async (
+  req: PaymentRequestWithFile,
+  res: Response
+) => {
   try {
-    const qrImage = req.file ? `/uploads/${req.file.filename}` : req.body.qrImage;
-    const channel = await updatePaymentChannel(Number(req.params.id), {
-      ...req.body,
-      ...(qrImage && { qrImage }),
+    const qrImage = req.file
+      ? `/uploads/${req.file.filename}`
+      : req.body.qrImage;
+
+    const channel = await updatePaymentChannel(
+      Number(req.params.id),
+      {
+        ...req.body,
+        ...(qrImage && { qrImage }),
+      }
+    );
+
+    return res.status(200).json({
+      message: "Channel pembayaran berhasil diupdate",
+      data: channel,
     });
-    return res.json({ message: "Channel berhasil diupdate", data: channel });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: "Gagal mengupdate channel pembayaran",
+      error: error.message,
+    });
   }
 };
 
-export const removeChannel = async (req: CustomRequest, res: Response) => {
+// ======================
+// DELETE PAYMENT CHANNEL
+// ======================
+export const removeChannel = async (
+  req: CustomRequest,
+  res: Response
+) => {
   try {
     await deletePaymentChannel(Number(req.params.id));
-    return res.json({ message: "Channel berhasil dinonaktifkan" });
+
+    return res.status(200).json({
+      message: "Channel pembayaran berhasil dinonaktifkan",
+    });
   } catch (error: any) {
-    return res.status(500).json({ message: error.message });
+    return res.status(500).json({
+      message: "Gagal menghapus channel pembayaran",
+      error: error.message,
+    });
   }
 };
