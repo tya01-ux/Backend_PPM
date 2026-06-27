@@ -1,4 +1,4 @@
-import { prisma } from "../lib/db.js"; 
+import { prisma } from "../lib/db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
@@ -6,7 +6,7 @@ export const registerUser = async (
     name: string,
     email: string,
     password: string,
-    phone: string
+    phone?: string
 ) => {
     const existingUser = await prisma.user.findUnique({
         where: { email },
@@ -23,7 +23,7 @@ export const registerUser = async (
             name,
             email,
             password: hashedPassword,
-            phone
+            phone: phone ?? null,
         },
     });
 
@@ -31,16 +31,13 @@ export const registerUser = async (
         id: user.id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
         createdAt: user.createdAt,
     };
 };
 
-export const loginUser = async (
-    email: string,
-    password: string
-) => {
-
+export const loginUser = async (email: string, password: string) => {
     const user = await prisma.user.findUnique({
         where: { email },
     });
@@ -49,13 +46,14 @@ export const loginUser = async (
         throw new Error("Email tidak ditemukan");
     }
 
-    const isMatch = await bcrypt.compare(
-        password,
-        user.password
-    );
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
         throw new Error("Password salah");
+    }
+
+    if (!process.env.JWT_SECRET) {
+        throw new Error("JWT_SECRET belum dikonfigurasi di server");
     }
 
     const token = jwt.sign(
@@ -64,10 +62,8 @@ export const loginUser = async (
             email: user.email,
             role: user.role,
         },
-        process.env.JWT_SECRET!,
-        {
-            expiresIn: "1d",
-        }
+        process.env.JWT_SECRET,
+        { expiresIn: "1d" }
     );
 
     return {
