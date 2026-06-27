@@ -186,3 +186,18 @@ enum PaymentChannelType {
   qris        // scan QR
   cash        // tunai
 }
+
+model Venue {
+  id        Int     @id @default(autoincrement())
+  name      String  @default("PUMA Badminton Hall")
+  address   String?
+  phone     String?
+  email     String?
+  openHour  String? // "06:00"
+  closeHour String? // "23:00"
+  logo      String?
+  banner    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -35,17 +35,21 @@ export const getBooking = async (req: CustomRequest, res: Response) => {
 
 export const addBooking = async (req: CustomRequest, res: Response) => {
   try {
-    const { startAt, endAt, courtId, notes } = req.body;
+    const { startAt, endAt, courtId, notes, userId } = req.body;
 
     if (!startAt || !endAt || !courtId) {
       return res.status(400).json({ message: "startAt, endAt, courtId wajib diisi" });
     }
 
+    // admin boleh booking-in atas nama user lain, user biasa cuma boleh atas nama sendiri
+    const targetUserId =
+      req.user?.role === "admin" && userId ? Number(userId) : req.user!.userId;
+
     const booking = await createBooking({
       startAt: new Date(startAt),
       endAt: new Date(endAt),
       courtId: Number(courtId),
-      userId: req.user!.userId,
+      userId: targetUserId,
       notes,
     });
 
