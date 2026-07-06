@@ -1,18 +1,14 @@
 import { prisma } from "../lib/db.js";
-
-enum MembershipStatus {
-  pending = "pending",
-  verification = "verification",
-  active = "active",
-  rejected = "rejected",
-}
+import { MembershipStatus, PaymentChannelType } from "@prisma/client";
 
 // CREATE — user daftar membership, status awal selalu "pending"
 export const createMembershipRegistration = async (data: {
   userId: number;
   membershipId: number;
-  paymentMethod?: string;
+  paymentMethod?: PaymentChannelType;
+  paymentChannelId?: number;
   proofImage?: string;
+  notes?: string;
 }) => {
   const membership = await prisma.membership.findUnique({
     where: { id: data.membershipId },
@@ -41,7 +37,9 @@ export const createMembershipRegistration = async (data: {
       userId: data.userId,
       membershipId: data.membershipId,
       paymentMethod: data.paymentMethod ?? null,
+      paymentChannelId: data.paymentChannelId ?? null,
       proofImageUrl: data.proofImage ?? null,
+      notes: data.notes ?? null,
       status: MembershipStatus.pending,
     },
   });
@@ -50,7 +48,7 @@ export const createMembershipRegistration = async (data: {
 // GET ALL
 export const getAllMembershipRegistrations = async () => {
   return await prisma.membershipRegistration.findMany({
-    include: { user: true, membership: true },
+    include: { user: true, membership: true, paymentChannel: true, approvedBy: true },
     orderBy: { createdAt: "desc" },
   });
 };
@@ -59,14 +57,14 @@ export const getAllMembershipRegistrations = async () => {
 export const getMembershipRegistrationById = async (id: number) => {
   return await prisma.membershipRegistration.findUnique({
     where: { id },
-    include: { user: true, membership: true },
+    include: { user: true, membership: true, paymentChannel: true, approvedBy: true },
   });
 };
 
 // USER upload / update bukti bayar — hanya boleh selagi masih "pending"
 export const submitPaymentProof = async (
   id: number,
-  data: { paymentMethod?: string; proofImage: string }
+  data: { paymentMethod?: PaymentChannelType; paymentChannelId?: number; proofImage: string }
 ) => {
   const registration = await prisma.membershipRegistration.findUnique({
     where: { id },
@@ -82,12 +80,20 @@ export const submitPaymentProof = async (
     );
   }
 
-  const updateData: { proofImageUrl: string; paymentMethod?: string | null } = {
+  const updateData: {
+    proofImageUrl: string;
+    paymentMethod?: PaymentChannelType | null;
+    paymentChannelId?: number | null;
+  } = {
     proofImageUrl: data.proofImage,
   };
 
   if (data.paymentMethod !== undefined) {
     updateData.paymentMethod = data.paymentMethod;
+  }
+
+  if (data.paymentChannelId !== undefined) {
+    updateData.paymentChannelId = data.paymentChannelId;
   }
 
   return await prisma.membershipRegistration.update({
@@ -124,8 +130,11 @@ export const moveToVerification = async (id: number) => {
   });
 };
 
-// ADMIN: verification -> active (otomatis bikin UserMembership)
-export const approveMembershipRegistration = async (id: number) => {
+// ADMIN: verification -> active (otomatis bikin UserMembership + isi audit trail)
+export const approveMembershipRegistration = async (
+  id: number,
+  approvedById: number
+) => {
   return await prisma.$transaction(async (tx) => {
     const registration = await tx.membershipRegistration.findUnique({
       where: { id },
@@ -142,9 +151,18 @@ export const approveMembershipRegistration = async (id: number) => {
       );
     }
 
+    const approver = await tx.user.findUnique({ where: { id: approvedById } });
+    if (!approver) {
+      throw new Error("NOT_FOUND: Admin approver tidak ditemukan");
+    }
+
     const updatedRegistration = await tx.membershipRegistration.update({
       where: { id },
-      data: { status: MembershipStatus.active },
+      data: {
+        status: MembershipStatus.active,
+        approvedById,
+        approvedAt: new Date(),
+      },
     });
 
     const startDate = new Date();
@@ -164,8 +182,8 @@ export const approveMembershipRegistration = async (id: number) => {
   });
 };
 
-// ADMIN: pending atau verification -> rejected
-export const rejectMembershipRegistration = async (id: number) => {
+// ADMIN: pending atau verification -> rejected (wajib reason)
+export const rejectMembershipRegistration = async (id: number, reason: string) => {
   const registration = await prisma.membershipRegistration.findUnique({
     where: { id },
   });
@@ -185,6 +203,10 @@ export const rejectMembershipRegistration = async (id: number) => {
 
   return await prisma.membershipRegistration.update({
     where: { id },
-    data: { status: MembershipStatus.rejected },
+    data: {
+      status: MembershipStatus.rejected,
+      rejectedAt: new Date(),
+      rejectReason: reason,
+    },
   });
 };

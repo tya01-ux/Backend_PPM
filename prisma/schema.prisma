@@ -28,6 +28,9 @@ model User {
   bookings                Booking[]
   memberships             UserMembership[]
   membershipRegistrations MembershipRegistration[]
+
+  // relasi baru: dipakai untuk audit trail siapa yang approve/reject registrasi
+  approvedRegistrations MembershipRegistration[] @relation("ApprovedBy")
 }
 
 // COURT
@@ -70,6 +73,7 @@ model Booking {
   payment Payment?
 
   @@index([courtId, startAt, endAt])
+  @@index([userId])
 }
 
 // PAYMENT CHANNEL
@@ -85,7 +89,8 @@ model PaymentChannel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  payments Payment[]
+  payments      Payment[]
+  registrations MembershipRegistration[]
 }
 
 // PAYMENT
@@ -149,7 +154,7 @@ model Membership {
   id          Int      @id @default(autoincrement())
   name        String
   price       Int
-  duration    Int              // masa berlaku dalam HARI (dipakai saat approve registration)
+  duration    Int              // masa berlaku dalam HARI (dipakai saat approve registration untuk hitung endDate)
   quotaLabel  String?          // label kuota, contoh: "4 Jam / Bulan". Null = tidak ditampilkan
   description String?
   benefits    Json             // array string, contoh: ["Harga lebih hemat", "Booking prioritas"]
@@ -163,20 +168,33 @@ model Membership {
 }
 
 model MembershipRegistration {
-  id           Int      @id @default(autoincrement())
+  id           Int               @id @default(autoincrement())
   userId       Int
   membershipId Int
-  status       String   @default("pending") // pending | approved | rejected
-  
-  proofImageUrl  String?
-  paymentMethod  String?
-  notes          String?
-  
+  status       MembershipStatus  @default(pending) // pending -> verification -> active | rejected
+
+  paymentChannelId Int?
+  paymentMethod    PaymentChannelType?
+  proofImageUrl    String?
+  notes            String?
+
+  // audit trail approve/reject
+  approvedById Int?
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  rejectReason String?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user       User       @relation(fields: [userId], references: [id])
-  membership Membership @relation(fields: [membershipId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  membership     Membership      @relation(fields: [membershipId], references: [id])
+  paymentChannel PaymentChannel? @relation(fields: [paymentChannelId], references: [id])
+  approvedBy     User?           @relation("ApprovedBy", fields: [approvedById], references: [id])
+
+  @@index([userId])
+  @@index([membershipId])
+  @@index([status])
 }
 
 model UserMembership {
@@ -190,8 +208,10 @@ model UserMembership {
 
   user       User       @relation(fields: [userId], references: [id])
   membership Membership @relation(fields: [membershipId], references: [id])
-}
 
+  @@index([userId])
+  @@index([membershipId])
+}
 
 // VENUE
 model Venue {
@@ -227,6 +247,7 @@ enum PaymentStatus {
   cash
 }
 
+// dipakai di MembershipRegistration.status (sebelumnya String biasa, sekarang enum asli)
 enum MembershipStatus {
   pending
   verification
@@ -234,8 +255,11 @@ enum MembershipStatus {
   rejected
 }
 
+// dipakai untuk PaymentChannel.type DAN MembershipRegistration.paymentMethod
+// nambahin "ewallet" karena di desain frontend ada 4 opsi: transfer, qris, e-wallet, tunai
 enum PaymentChannelType {
   transfer
   qris
+  ewallet
   cash
 }
