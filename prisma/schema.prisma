@@ -20,13 +20,14 @@ model User {
   email    String  @unique
   password String
   phone    String?
-  role     String  @default("user") // "user" | "admin"
+  role     String  @default("user")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings    Booking[]
-  memberships UserMembership[]
+  bookings                Booking[]
+  memberships             UserMembership[]
+  membershipRegistrations MembershipRegistration[]
 }
 
 // COURT
@@ -47,14 +48,14 @@ model Court {
 
 // BOOKING
 model Booking {
-  id          Int           @id @default(autoincrement())
-  bookingCode String        @unique // PUMA-260525-00123
-  
-  startAt   DateTime  // 2025-05-26 19:00:00
-  endAt     DateTime  // 2025-05-26 21:00:00
-  duration  Int       // dalam jam, e.g. 2
+  id          Int    @id @default(autoincrement())
+  bookingCode String @unique
 
-  courtPrice Int       // snapshot harga saat booking dibuat!
+  startAt  DateTime
+  endAt    DateTime
+  duration Int
+
+  courtPrice Int
   notes      String?
   status     BookingStatus @default(pending)
 
@@ -68,17 +69,17 @@ model Booking {
   court   Court    @relation(fields: [courtId], references: [id])
   payment Payment?
 
-  @@index([courtId, startAt, endAt]) // untuk cek bentrok jadwal
+  @@index([courtId, startAt, endAt])
 }
 
-// PAYMENT CHANNEL (rekening admin)
+// PAYMENT CHANNEL
 model PaymentChannel {
   id            Int                @id @default(autoincrement())
-  name          String             // "BRI", "DANA", "QRIS"
+  name          String
   type          PaymentChannelType
-  accountNumber String?            // nomor rekening / no HP
-  accountName   String?            // nama pemilik
-  qrImage       String?            // foto QR admin
+  accountNumber String?
+  accountName   String?
+  qrImage       String?
   isActive      Boolean            @default(true)
 
   createdAt DateTime @default(now())
@@ -89,36 +90,37 @@ model PaymentChannel {
 
 // PAYMENT
 model Payment {
-  id               Int           @id @default(autoincrement())
-  bookingId        Int           @unique
+  id               Int  @id @default(autoincrement())
+  bookingId        Int  @unique
   paymentChannelId Int?
   promoId          Int?
 
-  courtPrice  Int  // sama dengan Booking.courtPrice
-  adminFee    Int  @default(0)
-  discount    Int  @default(0)
-  totalAmount Int  // courtPrice + adminFee - discount
+  courtPrice  Int
+  adminFee    Int @default(0)
+  discount    Int @default(0)
+  totalAmount Int
 
-  status    PaymentStatus @default(pending)
-  paidAt    DateTime?     // waktu user klaim sudah bayar
-  expiredAt DateTime?     // batas waktu bayar (timer UI)
-  confirmedAt DateTime?   // waktu admin konfirmasi
-  note      String?       // catatan admin jika reject
+  status      PaymentStatus @default(pending)
+  paidAt      DateTime?
+  expiredAt   DateTime?
+  confirmedAt DateTime?
+  note        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  booking  Booking         @relation(fields: [bookingId], references: [id])
-  channel  PaymentChannel? @relation(fields: [paymentChannelId], references: [id])
-  promo    Promo?          @relation(fields: [promoId], references: [id])
-  proofs   PaymentProof[]
+  booking Booking         @relation(fields: [bookingId], references: [id])
+  channel PaymentChannel? @relation(fields: [paymentChannelId], references: [id])
+  promo   Promo?          @relation(fields: [promoId], references: [id])
+
+  proofs PaymentProof[]
 }
 
-// PAYMENT PROOF (bukti transfer)
+// PAYMENT PROOF
 model PaymentProof {
   id        Int    @id @default(autoincrement())
   paymentId Int
-  image     String // path / url file
+  image     String
 
   uploadedAt DateTime @default(now())
 
@@ -129,12 +131,13 @@ model PaymentProof {
 model Promo {
   id          Int     @id @default(autoincrement())
   code        String  @unique
-  discount    Int     // nominal rupiah atau persen
-  isPercent   Boolean @default(false) // false = nominal, true = persen
-  maxDiscount Int?    // cap maksimal jika isPercent = true
+  discount    Int
+  isPercent   Boolean @default(false)
+  maxDiscount Int?
   isActive    Boolean @default(true)
-  startDate   DateTime
-  endDate     DateTime
+
+  startDate DateTime
+  endDate   DateTime
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -142,62 +145,97 @@ model Promo {
   payments Payment[]
 }
 
-// MEMBERSHIP
 model Membership {
-  id          Int     @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   name        String
   price       Int
-  duration    Int     // dalam hari
+  duration    Int              // masa berlaku dalam HARI (dipakai saat approve registration)
+  quotaLabel  String?          // label kuota, contoh: "4 Jam / Bulan". Null = tidak ditampilkan
   description String?
+  benefits    Json             // array string, contoh: ["Harga lebih hemat", "Booking prioritas"]
+  isPopular   Boolean  @default(false) // munculin badge "Paling Hemat" di frontend
+  theme       String   @default("blue") // salah satu dari: slate | amber | blue | violet
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  users UserMembership[]
+  registrations   MembershipRegistration[]
+  userMemberships UserMembership[]
+}
+
+model MembershipRegistration {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  membershipId Int
+  status       String   @default("pending") // pending | approved | rejected
+  
+  proofImageUrl  String?
+  paymentMethod  String?
+  notes          String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id])
+  membership Membership @relation(fields: [membershipId], references: [id])
 }
 
 model UserMembership {
   id           Int      @id @default(autoincrement())
   userId       Int
   membershipId Int
-  startDate    DateTime
+  startDate    DateTime @default(now())
   endDate      DateTime
+  status       String   @default("active") // active | expired
+  createdAt    DateTime @default(now())
 
   user       User       @relation(fields: [userId], references: [id])
   membership Membership @relation(fields: [membershipId], references: [id])
 }
 
-// ENUMS
-enum BookingStatus {
-  pending     // baru dibuat, belum bayar
-  confirmed   // admin konfirmasi pembayaran
-  cancelled   // dibatalkan / expired
-  completed   // selesai main
-}
 
-enum PaymentStatus {
-  pending     // nunggu user bayar
-  uploaded    // user sudah upload bukti
-  confirmed   // admin konfirmasi ✅
-  rejected    // admin tolak ❌
-  expired     // waktu habis
-  cash        // bayar tunai di tempat
-}
-
-enum PaymentChannelType {
-  transfer    // transfer bank
-  qris        // scan QR
-  cash        // tunai
-}
-
+// VENUE
 model Venue {
-  id        Int     @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   name      String  @default("PUMA Badminton Hall")
   address   String?
   phone     String?
   email     String?
-  openHour  String? // "06:00"
-  closeHour String? // "23:00"
+  openHour  String?
+  closeHour String?
   logo      String?
   banner    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ENUMS
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  completed
+}
+
+enum PaymentStatus {
+  pending
+  uploaded
+  confirmed
+  rejected
+  expired
+  cash
+}
+
+enum MembershipStatus {
+  pending
+  verification
+  active
+  rejected
+}
+
+enum PaymentChannelType {
+  transfer
+  qris
+  cash
 }

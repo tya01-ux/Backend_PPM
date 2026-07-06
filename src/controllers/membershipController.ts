@@ -5,6 +5,7 @@ import {
   createMembership,
   updateMembershipById,
   deleteMembershipById,
+  validateMembershipInput,
 } from "../services/membershipService.js";
 
 // GET ALL MEMBERSHIPS
@@ -54,6 +55,15 @@ export const getMembership = async (req: Request, res: Response) => {
 // CREATE MEMBERSHIP
 export const addMembership = async (req: Request, res: Response) => {
   try {
+    const errors = validateMembershipInput(req.body);
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        message: "Data membership tidak valid",
+        errors,
+      });
+    }
+
     const membership = await createMembership(req.body);
 
     return res.status(201).json({
@@ -75,6 +85,15 @@ export const updateMembership = async (req: Request, res: Response) => {
     if (isNaN(id)) {
       return res.status(400).json({
         message: "ID membership tidak valid",
+      });
+    }
+
+    const errors = validateMembershipInput(req.body, { isUpdate: true });
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        message: "Data membership tidak valid",
+        errors,
       });
     }
 

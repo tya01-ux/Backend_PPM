@@ -12,6 +12,9 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import promoRoutes from "./routes/promoRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";  
 import venueRoutes from "./routes/venueRoutes.js"; 
+import membershipRegistrationRoutes from "./routes/membershipRegistrationRoutes.js";
+import userMembershipRoutes from "./routes/userMembershipRoutes.js";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +39,8 @@ app.use("/payments", paymentRoutes);
 app.use("/promos", promoRoutes);
 app.use("/reports", reportRoutes);  
 app.use("/venue", venueRoutes); 
+app.use("/membership-registrations", membershipRegistrationRoutes);
+app.use("/user-memberships", userMembershipRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
