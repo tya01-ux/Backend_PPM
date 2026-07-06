@@ -1,9 +1,16 @@
 import { Router } from "express";
-import { createUser, getUsers, updateUser, deleteUser } from "../controllers/userController.js";
-import { authenticate } from "../middlewares/authMiddleware.js";
-import { checkAdmin } from "../middlewares/authMiddleware.js";
+import {
+  createUser,
+  getUsers,
+  updateUser,
+  deleteUser,
+  updateOwnProfile,
+} from "../controllers/userController.js";
+import { authenticate, checkAdmin } from "../middlewares/authMiddleware.js";
 
 const router = Router();
+
+router.put("/me", authenticate, updateOwnProfile);
 
 router.get("/", authenticate, checkAdmin, getUsers);
 router.post("/", authenticate, checkAdmin, createUser);

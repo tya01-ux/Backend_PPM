@@ -156,6 +156,63 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+export const updateOwnProfile = async (req: Request, res: Response) => {
+  try {
+ 
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthenticated",
+      });
+    }
+
+    const { name, email, phone } = req.body;
+
+    if (email) {
+      const existingEmail = await prisma.user.findFirst({
+        where: {
+          email,
+          NOT: { id: userId },
+        },
+      });
+
+      if (existingEmail) {
+        return res.status(400).json({
+          message: "Email sudah digunakan user lain",
+        });
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name && { name }),
+        ...(email && { email }),
+        ...(phone !== undefined && { phone: phone || null }),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    return res.status(200).json({
+      message: "Profil berhasil diperbarui",
+      data: updatedUser,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Gagal memperbarui profil",
+      error: error.message,
+    });
+  }
+};
+
 // ===================== DELETE USER =====================
 export const deleteUser = async (req: Request, res: Response) => {
   try {
