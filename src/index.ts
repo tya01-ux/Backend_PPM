@@ -42,7 +42,7 @@ app.use("/reports", reportRoutes);
 app.use("/venue", venueRoutes); 
 app.use("/membership-registrations", membershipRegistrationRoutes);
 app.use("/user-memberships", userMembershipRoutes);
-app.use("/api/court-schedules", courtScheduleRoutes);
+app.use("/court-schedules", courtScheduleRoutes);
 
 
 app.listen(port, () => {
