@@ -70,16 +70,26 @@ export const uploadPaymentProof = async (
   });
 
   if (!payment) throw new Error("Payment tidak ditemukan");
-  if (payment.booking.userId !== userId && role !== "admin")
+
+  const isAdmin = role === "admin";
+
+  if (payment.booking.userId !== userId && !isAdmin)
     throw new Error("Akses ditolak");
-  if (payment.status === "confirmed")
-    throw new Error("Pembayaran sudah dikonfirmasi");
-  if (payment.expiredAt && new Date() > payment.expiredAt) {
-    await prisma.payment.update({
-      where: { bookingId },
-      data: { status: "expired" },
-    });
-    throw new Error("Waktu pembayaran sudah habis");
+
+  // Admin boleh melampirkan bukti kapan pun (mis. booking cash,
+  // atau dokumentasi manual), jadi validasi status & expired
+  // di bawah ini hanya berlaku untuk user biasa.
+  if (!isAdmin) {
+    if (payment.status === "confirmed")
+      throw new Error("Pembayaran sudah dikonfirmasi");
+
+    if (payment.expiredAt && new Date() > payment.expiredAt) {
+      await prisma.payment.update({
+        where: { bookingId },
+        data: { status: "expired" },
+      });
+      throw new Error("Waktu pembayaran sudah habis");
+    }
   }
 
   const imageUrl = `/uploads/${filename}`;
@@ -90,7 +100,13 @@ export const uploadPaymentProof = async (
     }),
     prisma.payment.update({
       where: { bookingId },
-      data: { status: "uploaded", paidAt: new Date() },
+      data: {
+        // Kalau admin upload dan status masih pending/expired/rejected,
+        // tetap majukan ke "uploaded" biar admin bisa langsung konfirmasi;
+        // kalau statusnya udah confirmed/cash, biarkan apa adanya.
+        status: payment.status === "confirmed" ? payment.status : "uploaded",
+        paidAt: payment.paidAt ?? new Date(),
+      },
     }),
   ]);
 
