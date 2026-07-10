@@ -122,7 +122,13 @@ export const submitPaymentProofHandler = async (req: CustomRequest, res: Respons
     if (!existing) {
       return res.status(404).json({ message: "Pendaftaran membership tidak ditemukan" });
     }
-    if (existing.userId !== req.user?.userId) {
+
+    // owner boleh upload bukti punya sendiri, ADMIN juga boleh upload
+    // bukti buat pendaftaran siapa aja (dipakai di panel admin — mis. upload
+    // bukti terima tunai buat pembayaran cash)
+    const isOwner = existing.userId === req.user?.userId;
+    const isAdmin = req.user?.role?.toLowerCase() === "admin";
+    if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: "Akses ditolak" });
     }
 
