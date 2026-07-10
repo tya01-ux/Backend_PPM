@@ -28,6 +28,8 @@ model User {
   bookings                Booking[]
   memberships             UserMembership[]
   membershipRegistrations MembershipRegistration[]
+  notifications           Notification[]  
+
 
   // relasi baru: dipakai untuk audit trail siapa yang approve/reject registrasi
   approvedRegistrations MembershipRegistration[] @relation("ApprovedBy")
@@ -316,3 +318,19 @@ enum NotificationType {
   schedule_new         // ke user/broadcast: ada maintenance/event baru
 }
 
+model Notification {
+  id      Int    @id @default(autoincrement())
+  userId  Int
+  title   String
+  message String
+  type    NotificationType
+  isRead  Boolean @default(false)
+  link    String?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([userId, isRead])
+}
