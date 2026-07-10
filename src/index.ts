@@ -14,6 +14,7 @@ import reportRoutes from "./routes/reportRoutes.js";
 import venueRoutes from "./routes/venueRoutes.js"; 
 import membershipRegistrationRoutes from "./routes/membershipRegistrationRoutes.js";
 import userMembershipRoutes from "./routes/userMembershipRoutes.js";
+import courtScheduleRoutes from "./routes/courtScheduleRoutes.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +42,8 @@ app.use("/reports", reportRoutes);
 app.use("/venue", venueRoutes); 
 app.use("/membership-registrations", membershipRegistrationRoutes);
 app.use("/user-memberships", userMembershipRoutes);
+app.use("/api/court-schedules", courtScheduleRoutes);
+
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
