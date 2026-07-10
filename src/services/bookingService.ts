@@ -118,6 +118,34 @@ export const getBookingById = async (id: number) => {
   return booking ? withDisplayStatus(booking) : booking;
 };
 
+// GET SLOT YANG SUDAH TERISI (untuk cek ketersediaan booking)
+// Dipakai di halaman booking customer. Sengaja TIDAK di-filter per-userId
+// (beda dari getAllBookings) supaya slot yang dibooking SIAPA PUN tetap
+// ditandai penuh. Data yang dikembalikan diminimalkan (tanpa nama/email
+// pemesan) demi privasi.
+export const getBookedSlots = async (courtId: number, date: string) => {
+  // sapu booking yang udah kelewatan waktu bayar dulu, biar slot yang
+  // sebenarnya sudah auto-expired tidak ikut ditandai merah
+  await autoExpireBookings();
+
+  const startOfDay = new Date(`${date}T00:00:00`);
+  const endOfDay   = new Date(`${date}T23:59:59.999`);
+
+  return await prisma.booking.findMany({
+    where: {
+      courtId,
+      status: { notIn: ["cancelled"] },
+      startAt: { gte: startOfDay, lte: endOfDay },
+    },
+    select: {
+      startAt: true,
+      endAt: true,
+      status: true,
+    },
+    orderBy: { startAt: "asc" },
+  });
+};
+
 // CRETAE BOOKING
 export const createBooking = async (data: {
   startAt: Date;

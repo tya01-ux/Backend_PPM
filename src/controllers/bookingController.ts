@@ -5,6 +5,7 @@ import {
   createBooking,
   cancelBooking,
   updateBooking,
+  getBookedSlots,
 } from "../services/bookingService.js";
 import { CustomRequest } from "../middlewares/authMiddleware.js";
 
@@ -16,6 +17,34 @@ export const getBookings = async (req: CustomRequest, res: Response) => {
     return res.json({
       data: bookings,
     });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+// GET KETERSEDIAAN SLOT (availability)
+// Bisa diakses semua user yang login, TIDAK di-filter per-pemilik —
+// khusus untuk nge-render slot merah/available di halaman booking
+// customer, supaya konsisten lintas akun (bukan cuma booking sendiri).
+export const getAvailabilityHandler = async (
+  req: CustomRequest,
+  res: Response
+) => {
+  try {
+    const courtId = Number(req.query.courtId);
+    const date = String(req.query.date || "");
+
+    if (isNaN(courtId) || !date) {
+      return res.status(400).json({
+        message: "courtId dan date wajib diisi",
+      });
+    }
+
+    const slots = await getBookedSlots(courtId, date);
+
+    return res.json({ data: slots });
   } catch (error: any) {
     return res.status(500).json({
       message: error.message,
