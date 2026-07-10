@@ -10,18 +10,41 @@ const generateBookingCode = (): string => {
   return `PUMA-${dd}${mm}${yy}-${rand}`;
 };
 
+// ─── STATUS OTOMATIS (tanpa ubah data di DB) ──────────────────────────────
+// Booking dengan status asli "confirmed" akan ditampilkan sebagai:
+// - "ongoing"   kalau waktu sekarang ada di antara startAt–endAt
+// - "completed" kalau endAt sudah lewat
+// Status lain (pending/cancelled/completed manual) tetap apa adanya.
+// Ini murni untuk tampilan — kolom `status` di database TIDAK berubah.
+const resolveDisplayStatus = (booking: {
+  status: string;
+  startAt: Date;
+  endAt: Date;
+}): string => {
+  if (booking.status !== "confirmed") return booking.status;
+
+  const now = new Date();
+  if (now > booking.endAt) return "completed";
+  if (now >= booking.startAt && now <= booking.endAt) return "ongoing";
+  return "confirmed";
+};
+
+const withDisplayStatus = <
+  T extends { status: string; startAt: Date; endAt: Date }
+>(
+  booking: T
+): T => ({
+  ...booking,
+  status: resolveDisplayStatus(booking) as T["status"],
+});
+
 // GET ALL
-// ✅ FIX: payment sekarang pakai `include` (bukan `select` yang cuma ambil
-// 3 field) supaya channel & proofs ikut kebawa. Ini yang bikin kolom Metode,
-// Bukti Transfer, dan Dibuat Pada kosong di tabel admin, dan bikin halaman
-// blank pas buka detail (field kayak courtPrice/adminFee jadi undefined,
-// terus formatRupiah(undefined) crash).
 export const getAllBookings = async (userId?: number, role?: string) => {
   if (role !== "admin" && typeof userId === "undefined") {
     throw new Error("User ID dibutuhkan");
   }
 
-  return await prisma.booking.findMany({
+  const bookings = await prisma.booking.findMany({
     where: role === "admin" ? {} : { userId: userId! },
     include: {
       user: {
@@ -39,11 +62,13 @@ export const getAllBookings = async (userId?: number, role?: string) => {
     },
     orderBy: { createdAt: "desc" },
   });
+
+  return bookings.map(withDisplayStatus);
 };
 
 // GET BOKING ID NYA
 export const getBookingById = async (id: number) => {
-  return await prisma.booking.findUnique({
+  const booking = await prisma.booking.findUnique({
     where: { id },
     include: {
       user: {
@@ -59,6 +84,8 @@ export const getBookingById = async (id: number) => {
       },
     },
   });
+
+  return booking ? withDisplayStatus(booking) : booking;
 };
 
 // CRETAE BOOKING
