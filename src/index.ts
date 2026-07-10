@@ -15,6 +15,7 @@ import venueRoutes from "./routes/venueRoutes.js";
 import membershipRegistrationRoutes from "./routes/membershipRegistrationRoutes.js";
 import userMembershipRoutes from "./routes/userMembershipRoutes.js";
 import courtScheduleRoutes from "./routes/courtScheduleRoutes.js";
+import notificationRoutes from "./routes/notificationroutes .js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,7 @@ app.use("/venue", venueRoutes);
 app.use("/membership-registrations", membershipRegistrationRoutes);
 app.use("/user-memberships", userMembershipRoutes);
 app.use("/court-schedules", courtScheduleRoutes);
+app.use("/notifications", notificationRoutes);
 
 
 app.listen(port, () => {

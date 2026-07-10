@@ -303,3 +303,16 @@ enum ScheduleType {
   event
   blocked
 }
+
+// BARU — dipakai di Notification.type
+enum NotificationType {
+  booking_new          // ke admin: ada booking baru masuk
+  booking_confirmed    // ke user: booking-nya di-approve admin
+  booking_cancelled    // ke user: booking-nya dibatalkan/ditolak
+  booking_completed    // ke user: booking selesai
+  membership_new       // ke admin: ada registrasi membership baru
+  membership_active    // ke user: membership-nya diaktifkan admin
+  membership_rejected  // ke user: registrasi membership ditolak
+  schedule_new         // ke user/broadcast: ada maintenance/event baru
+}
+
