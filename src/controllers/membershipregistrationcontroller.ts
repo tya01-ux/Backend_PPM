@@ -56,10 +56,14 @@ export const getMembershipRegistration = async (req: CustomRequest, res: Respons
 };
 
 // CREATE — userId dari token
+// ⚠️ Sekarang endpoint ini pakai multer (lihat route), jadi body dikirim
+// sebagai multipart/form-data, bukan JSON lagi. Field teks (membershipId, dst)
+// tetap nyampe di req.body seperti biasa (multer otomatis parsing field non-file),
+// dan file bukti (kalau ada) nyampe di req.file.
 export const addMembershipRegistration = async (req: CustomRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { membershipId, paymentMethod, paymentChannelId, proofImage, notes } = req.body;
+    const { membershipId, paymentMethod, paymentChannelId, notes } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -68,11 +72,16 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
       return res.status(400).json({ message: "membershipId wajib diisi" });
     }
 
+    // file bersifat opsional di sini — metode "cash" biasanya belum ada bukti
+    // saat daftar, jadi cuma proofImage yang keisi kalau ada file yang diupload
+    const file = req.file;
+    const proofImageUrl = file ? `/uploads/membership-proofs/${file.filename}` : undefined;
+
     const payload: any = {
       userId,
       membershipId: Number(membershipId),
       paymentMethod,
-      proofImage,
+      proofImage: proofImageUrl,
       notes,
     };
     if (paymentChannelId !== undefined && paymentChannelId !== null && paymentChannelId !== "") {
@@ -92,16 +101,21 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
 };
 
 // USER upload bukti bayar
+// ⚠️ PERUBAHAN UTAMA: sekarang terima file dari multer (req.file), BUKAN
+// string dari req.body.proofImage lagi. multer.single("proofImage") di route
+// akan mem-parsing multipart/form-data dan naruh hasilnya di req.file.
 export const submitPaymentProofHandler = async (req: CustomRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { paymentMethod, paymentChannelId, proofImage } = req.body;
 
     if (isNaN(id)) {
       return res.status(400).json({ message: "ID pendaftaran membership tidak valid" });
     }
-    if (!proofImage) {
-      return res.status(400).json({ message: "proofImage wajib diisi" });
+
+    // req.file cuma ada kalau middleware multer berhasil parsing filenya
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ message: "File bukti pembayaran wajib diunggah" });
     }
 
     const existing = await getMembershipRegistrationById(id);
@@ -112,10 +126,20 @@ export const submitPaymentProofHandler = async (req: CustomRequest, res: Respons
       return res.status(403).json({ message: "Akses ditolak" });
     }
 
+    // paymentMethod & paymentChannelId tetap bisa dikirim bareng file lewat
+    // FormData (formData.append("paymentMethod", ...) dst di frontend kalau perlu)
+    const { paymentMethod, paymentChannelId } = req.body;
+
+    // path relatif yang disimpan ke DB & dipakai frontend buat nampilin gambar
+    // (frontend sudah handle: proofImageUrl.startsWith("http") ? url : `${BASE_URL}${url}`)
+    const proofImageUrl = `/uploads/membership-proofs/${file.filename}`;
+
     const payload: any = {
-      paymentMethod,
-      proofImage,
+      proofImage: proofImageUrl,
     };
+    if (paymentMethod !== undefined && paymentMethod !== "") {
+      payload.paymentMethod = paymentMethod;
+    }
     if (paymentChannelId !== undefined && paymentChannelId !== null && paymentChannelId !== "") {
       payload.paymentChannelId = Number(paymentChannelId);
     }
