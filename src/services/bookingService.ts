@@ -11,6 +11,11 @@ const generateBookingCode = (): string => {
 };
 
 // GET ALL
+// ✅ FIX: payment sekarang pakai `include` (bukan `select` yang cuma ambil
+// 3 field) supaya channel & proofs ikut kebawa. Ini yang bikin kolom Metode,
+// Bukti Transfer, dan Dibuat Pada kosong di tabel admin, dan bikin halaman
+// blank pas buka detail (field kayak courtPrice/adminFee jadi undefined,
+// terus formatRupiah(undefined) crash).
 export const getAllBookings = async (userId?: number, role?: string) => {
   if (role !== "admin" && typeof userId === "undefined") {
     throw new Error("User ID dibutuhkan");
@@ -26,7 +31,10 @@ export const getAllBookings = async (userId?: number, role?: string) => {
         select: { id: true, name: true, type: true, image: true },
       },
       payment: {
-        select: { status: true, totalAmount: true, expiredAt: true },
+        include: {
+          channel: true,
+          proofs: true,
+        },
       },
     },
     orderBy: { createdAt: "desc" },
