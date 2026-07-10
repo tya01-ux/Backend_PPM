@@ -10,12 +10,36 @@ const generateBookingCode = (): string => {
   return `PUMA-${dd}${mm}${yy}-${rand}`;
 };
 
-// ─── STATUS OTOMATIS (tanpa ubah data di DB) ──────────────────────────────
-// Booking dengan status asli "confirmed" akan ditampilkan sebagai:
-// - "ongoing"   kalau waktu sekarang ada di antara startAt–endAt
-// - "completed" kalau endAt sudah lewat
-// Status lain (pending/cancelled/completed manual) tetap apa adanya.
-// Ini murni untuk tampilan — kolom `status` di database TIDAK berubah.
+// After booking dikonfirmasi, status display-nya bisa berubah-ubah:
+export const autoExpireBookings = async () => {
+  const now = new Date();
+
+  const expiredPayments = await prisma.payment.findMany({
+    where: {
+      status: "pending",
+      expiredAt: { lt: now },
+    },
+    select: { id: true, bookingId: true },
+  });
+
+  if (expiredPayments.length === 0) return;
+
+  const paymentIds = expiredPayments.map((p) => p.id);
+  const bookingIds = expiredPayments.map((p) => p.bookingId);
+
+  await prisma.$transaction([
+    prisma.payment.updateMany({
+      where: { id: { in: paymentIds } },
+      data: { status: "expired" },
+    }),
+    prisma.booking.updateMany({
+      where: { id: { in: bookingIds } },
+      data: { status: "cancelled" },
+    }),
+  ]);
+};
+
+// Setelah booking dikonfirmasi, status display-nya bisa berubah-ubah:
 const resolveDisplayStatus = (booking: {
   status: string;
   startAt: Date;
@@ -44,6 +68,9 @@ export const getAllBookings = async (userId?: number, role?: string) => {
     throw new Error("User ID dibutuhkan");
   }
 
+  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
+  await autoExpireBookings();
+
   const bookings = await prisma.booking.findMany({
     where: role === "admin" ? {} : { userId: userId! },
     include: {
@@ -68,6 +95,9 @@ export const getAllBookings = async (userId?: number, role?: string) => {
 
 // GET BOKING ID NYA
 export const getBookingById = async (id: number) => {
+  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
+  await autoExpireBookings();
+
   const booking = await prisma.booking.findUnique({
     where: { id },
     include: {
@@ -138,7 +168,7 @@ export const createBooking = async (data: {
           courtPrice,
           adminFee,
           totalAmount: courtPrice + adminFee,
-          expiredAt: new Date(Date.now() + 15 * 60 * 1000), // 15 menit
+          expiredAt: new Date(Date.now() + 30 * 60 * 1000), // 30 menit
         },
       },
     },

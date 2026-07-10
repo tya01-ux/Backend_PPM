@@ -1,4 +1,5 @@
 import { prisma } from "../lib/db.js";
+import { autoExpireBookings } from "./bookingService.js";
 
 export const getPaymentChannels = async () => {
   return await prisma.paymentChannel.findMany({
@@ -150,6 +151,9 @@ export const getPaymentByBookingId = async (
   userId: number,
   role: string
 ) => {
+  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
+  await autoExpireBookings();
+
   const payment = await prisma.payment.findUnique({
     where: { bookingId },
     include: {
