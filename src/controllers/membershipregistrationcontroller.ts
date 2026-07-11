@@ -9,6 +9,7 @@ import {
   approveMembershipRegistration,
   rejectMembershipRegistration,
 } from "../services/membershipregistrationservice.js";
+import { createNotification, notifyAllAdmins } from "../services/notificationservice.js"; // ✅ tambah import ini
 
 const resolveErrorStatus = (message: string) => {
   if (message.startsWith("NOT_FOUND:")) {
@@ -56,10 +57,6 @@ export const getMembershipRegistration = async (req: CustomRequest, res: Respons
 };
 
 // CREATE — userId dari token
-// ⚠️ Sekarang endpoint ini pakai multer (lihat route), jadi body dikirim
-// sebagai multipart/form-data, bukan JSON lagi. Field teks (membershipId, dst)
-// tetap nyampe di req.body seperti biasa (multer otomatis parsing field non-file),
-// dan file bukti (kalau ada) nyampe di req.file.
 export const addMembershipRegistration = async (req: CustomRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -72,8 +69,6 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
       return res.status(400).json({ message: "membershipId wajib diisi" });
     }
 
-    // file bersifat opsional di sini — metode "cash" biasanya belum ada bukti
-    // saat daftar, jadi cuma proofImage yang keisi kalau ada file yang diupload
     const file = req.file;
     const proofImageUrl = file ? `/uploads/membership-proofs/${file.filename}` : undefined;
 
@@ -90,6 +85,14 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
 
     const registration = await createMembershipRegistration(payload);
 
+    // ✅ Notif ke semua admin: ada pendaftaran membership baru
+    await notifyAllAdmins({
+      title: "Pendaftaran Member Baru",
+      message: `Ada pendaftaran membership baru yang perlu diverifikasi.`,
+      type: "membership_new",
+      link: "/admin/member",
+    });
+
     return res.status(201).json({
       message: "Pendaftaran membership berhasil dibuat, menunggu approval",
       data: registration,
@@ -101,9 +104,6 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
 };
 
 // USER upload bukti bayar
-// ⚠️ PERUBAHAN UTAMA: sekarang terima file dari multer (req.file), BUKAN
-// string dari req.body.proofImage lagi. multer.single("proofImage") di route
-// akan mem-parsing multipart/form-data dan naruh hasilnya di req.file.
 export const submitPaymentProofHandler = async (req: CustomRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -112,7 +112,6 @@ export const submitPaymentProofHandler = async (req: CustomRequest, res: Respons
       return res.status(400).json({ message: "ID pendaftaran membership tidak valid" });
     }
 
-    // req.file cuma ada kalau middleware multer berhasil parsing filenya
     const file = req.file;
     if (!file) {
       return res.status(400).json({ message: "File bukti pembayaran wajib diunggah" });
@@ -123,21 +122,14 @@ export const submitPaymentProofHandler = async (req: CustomRequest, res: Respons
       return res.status(404).json({ message: "Pendaftaran membership tidak ditemukan" });
     }
 
-    // owner boleh upload bukti punya sendiri, ADMIN juga boleh upload
-    // bukti buat pendaftaran siapa aja (dipakai di panel admin — mis. upload
-    // bukti terima tunai buat pembayaran cash)
     const isOwner = existing.userId === req.user?.userId;
     const isAdmin = req.user?.role?.toLowerCase() === "admin";
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: "Akses ditolak" });
     }
 
-    // paymentMethod & paymentChannelId tetap bisa dikirim bareng file lewat
-    // FormData (formData.append("paymentMethod", ...) dst di frontend kalau perlu)
     const { paymentMethod, paymentChannelId } = req.body;
 
-    // path relatif yang disimpan ke DB & dipakai frontend buat nampilin gambar
-    // (frontend sudah handle: proofImageUrl.startsWith("http") ? url : `${BASE_URL}${url}`)
     const proofImageUrl = `/uploads/membership-proofs/${file.filename}`;
 
     const payload: any = {
@@ -195,6 +187,20 @@ export const approveMembershipRegistrationHandler = async (req: CustomRequest, r
     }
 
     const result = await approveMembershipRegistration(id, approverId);
+    const approvedRegistration = "registration" in result ? result.registration : result;
+
+    // ✅ Notif ke user: membership-nya udah aktif
+    if (approvedRegistration?.userId) {
+      const membershipName = approvedRegistration.membership?.name ?? "Membership";
+      await createNotification({
+        userId: approvedRegistration.userId,
+        title: "Membership Aktif",
+        message: `Selamat! Pendaftaran ${membershipName} kamu telah disetujui dan aktif sekarang.`,
+        type: "membership_active",
+        link: "/profile",
+      });
+    }
+
     return res.json({
       message: "Pendaftaran membership berhasil di-approve",
       data: result,
@@ -219,6 +225,19 @@ export const rejectMembershipRegistrationHandler = async (req: CustomRequest, re
     }
 
     const registration = await rejectMembershipRegistration(id, reason);
+
+    // ✅ Notif ke user: pendaftaran ditolak
+    if (registration?.userId) {
+      const membershipName = registration.membership?.name ?? "Membership";
+      await createNotification({
+        userId: registration.userId,
+        title: "Pendaftaran Membership Ditolak",
+        message: `Maaf, pendaftaran ${membershipName} kamu ditolak. Alasan: ${reason}`,
+        type: "membership_rejected",
+        link: "/profile",
+      });
+    }
+
     return res.json({
       message: "Pendaftaran membership berhasil di-reject",
       data: registration,

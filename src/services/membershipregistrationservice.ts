@@ -163,6 +163,7 @@ export const approveMembershipRegistration = async (
         approvedById,
         approvedAt: new Date(),
       },
+      include: { membership: true }, // ✅ wajib biar notifikasi bisa baca nama paket
     });
 
     const startDate = new Date();
@@ -208,5 +209,6 @@ export const rejectMembershipRegistration = async (id: number, reason: string) =
       rejectedAt: new Date(),
       rejectReason: reason,
     },
+    include: { membership: true }, // ✅ wajib biar notifikasi bisa baca nama paket
   });
 };

@@ -10,7 +10,6 @@ const generateBookingCode = (): string => {
   return `PUMA-${dd}${mm}${yy}-${rand}`;
 };
 
-// After booking dikonfirmasi, status display-nya bisa berubah-ubah:
 export const autoExpireBookings = async () => {
   const now = new Date();
 
@@ -39,7 +38,6 @@ export const autoExpireBookings = async () => {
   ]);
 };
 
-// Setelah booking dikonfirmasi, status display-nya bisa berubah-ubah:
 const resolveDisplayStatus = (booking: {
   status: string;
   startAt: Date;
@@ -53,9 +51,7 @@ const resolveDisplayStatus = (booking: {
   return "confirmed";
 };
 
-const withDisplayStatus = <
-  T extends { status: string; startAt: Date; endAt: Date }
->(
+const withDisplayStatus = <T extends { status: string; startAt: Date; endAt: Date }>(
   booking: T
 ): T => ({
   ...booking,
@@ -68,7 +64,6 @@ export const getAllBookings = async (userId?: number, role?: string) => {
     throw new Error("User ID dibutuhkan");
   }
 
-  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
   await autoExpireBookings();
 
   const bookings = await prisma.booking.findMany({
@@ -95,7 +90,6 @@ export const getAllBookings = async (userId?: number, role?: string) => {
 
 // GET BOKING ID NYA
 export const getBookingById = async (id: number) => {
-  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
   await autoExpireBookings();
 
   const booking = await prisma.booking.findUnique({
@@ -119,13 +113,7 @@ export const getBookingById = async (id: number) => {
 };
 
 // GET SLOT YANG SUDAH TERISI (untuk cek ketersediaan booking)
-// Dipakai di halaman booking customer. Sengaja TIDAK di-filter per-userId
-// (beda dari getAllBookings) supaya slot yang dibooking SIAPA PUN tetap
-// ditandai penuh. Data yang dikembalikan diminimalkan (tanpa nama/email
-// pemesan) demi privasi.
 export const getBookedSlots = async (courtId: number, date: string) => {
-  // sapu booking yang udah kelewatan waktu bayar dulu, biar slot yang
-  // sebenarnya sudah auto-expired tidak ikut ditandai merah
   await autoExpireBookings();
 
   const startOfDay = new Date(`${date}T00:00:00`);
@@ -156,18 +144,15 @@ export const createBooking = async (data: {
 }) => {
   const { startAt, endAt, notes, userId, courtId } = data;
 
-  // hitung durasi dalam jam
   const duration = Math.round(
     (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60)
   );
 
   if (duration <= 0) throw new Error("Waktu tidak valid");
 
-  // ambil harga court
   const court = await prisma.court.findUnique({ where: { id: courtId } });
   if (!court || !court.isActive) throw new Error("Lapangan tidak tersedia");
 
-  // cek bentrok jadwal
   const conflict = await prisma.booking.findFirst({
     where: {
       courtId,
@@ -196,7 +181,7 @@ export const createBooking = async (data: {
           courtPrice,
           adminFee,
           totalAmount: courtPrice + adminFee,
-          expiredAt: new Date(Date.now() + 30 * 60 * 1000), // 30 menit
+          expiredAt: new Date(Date.now() + 30 * 60 * 1000),
         },
       },
     },
@@ -225,7 +210,6 @@ export const updateBooking = async (
 
   if (!booking) throw new Error("Booking tidak ditemukan");
 
-  // kalau ada perubahan waktu/court, recalculate harga
   if (data.startAt || data.endAt || data.courtId) {
     const startAt  = data.startAt  ?? booking.startAt;
     const endAt    = data.endAt    ?? booking.endAt;
@@ -239,7 +223,6 @@ export const updateBooking = async (
     const court = await prisma.court.findUnique({ where: { id: courtId } });
     if (!court || !court.isActive) throw new Error("Lapangan tidak tersedia");
 
-    // cek bentrok, skip booking ini sendiri
     const conflict = await prisma.booking.findFirst({
       where: {
         courtId,
@@ -254,9 +237,10 @@ export const updateBooking = async (
     const adminFee   = booking.payment?.adminFee ?? 2500;
     const totalAmount = courtPrice + adminFee;
 
-    // update booking + recalculate payment sekaligus
-    return await prisma.$transaction([
-      prisma.booking.update({
+    // ✅ FIX: pakai $transaction dengan callback biar return objek tunggal
+    // yang sudah include court, bukan array hasil transaksi
+    return await prisma.$transaction(async (tx) => {
+      const updatedBooking = await tx.booking.update({
         where: { id },
         data: {
           courtId,
@@ -267,14 +251,18 @@ export const updateBooking = async (
           notes:  data.notes  ?? booking.notes,
           status: data.status ?? booking.status,
         },
-      }),
-      ...(booking.payment ? [
-        prisma.payment.update({
+        include: { court: true }, // ✅ wajib biar notifikasi bisa baca nama lapangan
+      });
+
+      if (booking.payment) {
+        await tx.payment.update({
           where: { bookingId: id },
           data: { courtPrice, totalAmount },
-        }),
-      ] : []),
-    ]);
+        });
+      }
+
+      return updatedBooking;
+    });
   }
 
   // kalau cuma update notes/status aja
@@ -284,6 +272,7 @@ export const updateBooking = async (
       ...(data.notes  !== undefined && { notes: data.notes }),
       ...(data.status !== undefined && { status: data.status }),
     },
+    include: { court: true }, // ✅ tambahin ini juga
   });
 };
 

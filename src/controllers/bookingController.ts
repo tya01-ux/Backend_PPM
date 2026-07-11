@@ -7,6 +7,7 @@ import {
   updateBooking,
   getBookedSlots,
 } from "../services/bookingService.js";
+import { createNotification, notifyAllAdmins } from "../services/notificationservice.js";
 import { CustomRequest } from "../middlewares/authMiddleware.js";
 
 // GET ALL BOOKINGS
@@ -25,9 +26,6 @@ export const getBookings = async (req: CustomRequest, res: Response) => {
 };
 
 // GET KETERSEDIAAN SLOT (availability)
-// Bisa diakses semua user yang login, TIDAK di-filter per-pemilik —
-// khusus untuk nge-render slot merah/available di halaman booking
-// customer, supaya konsisten lintas akun (bukan cuma booking sendiri).
 export const getAvailabilityHandler = async (
   req: CustomRequest,
   res: Response
@@ -71,7 +69,6 @@ export const getBooking = async (req: CustomRequest, res: Response) => {
       });
     }
 
-    // User hanya boleh melihat booking miliknya sendiri
     if (
       req.user?.role !== "admin" &&
       booking.user.id !== req.user?.userId
@@ -110,7 +107,6 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
       });
     }
 
-    // Admin boleh membuat booking atas nama user lain
     const targetUserId =
       req.user?.role === "admin" && userId
         ? Number(userId)
@@ -122,6 +118,14 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
       courtId: courtIdNumber,
       userId: targetUserId,
       notes,
+    });
+
+    // ✅ Notif ke semua admin: ada booking baru masuk
+    await notifyAllAdmins({
+      title: "Booking Baru",
+      message: "Ada booking baru masuk yang perlu dikonfirmasi.",
+      type: "booking_new",
+      link: "/admin/booking",
     });
 
     return res.status(201).json({
@@ -146,7 +150,6 @@ export const updateBookingHandler = async (
       return res.status(400).json({ message: "ID booking tidak valid" });
     }
 
-    // hanya admin yang boleh update
     if (req.user?.role !== "admin") {
       return res.status(403).json({ message: "Hanya admin yang bisa mengubah booking" });
     }
@@ -160,6 +163,37 @@ export const updateBookingHandler = async (
       ...(notes    !== undefined && { notes }),
       ...(status   && { status }),
     });
+
+    // ✅ Notif ke user pas status booking berubah
+    if (status && result?.userId) {
+      const courtName = result.court?.name ?? "lapangan";
+
+      if (status === "confirmed") {
+        await createNotification({
+          userId: result.userId,
+          title: "Booking Dikonfirmasi",
+          message: `Booking kamu untuk ${courtName} telah dikonfirmasi. Sampai jumpa di lapangan!`,
+          type: "booking_confirmed",
+          link: "/profile/riwayat-booking",
+        });
+      } else if (status === "cancelled") {
+        await createNotification({
+          userId: result.userId,
+          title: "Booking Dibatalkan",
+          message: `Booking kamu untuk ${courtName} telah dibatalkan.`,
+          type: "booking_cancelled",
+          link: "/profile/riwayat-booking",
+        });
+      } else if (status === "completed") {
+        await createNotification({
+          userId: result.userId,
+          title: "Booking Selesai",
+          message: `Terima kasih sudah bermain di ${courtName}! Sampai jumpa lagi.`,
+          type: "booking_completed",
+          link: "/profile/riwayat-booking",
+        });
+      }
+    }
 
     return res.json({
       message: "Booking berhasil diupdate",
