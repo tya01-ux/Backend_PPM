@@ -120,13 +120,20 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
       notes,
     });
 
-    // ✅ Notif ke semua admin: ada booking baru masuk
-    await notifyAllAdmins({
-      title: "Booking Baru",
-      message: "Ada booking baru masuk yang perlu dikonfirmasi.",
-      type: "booking_new",
-      link: "/admin/booking",
-    });
+    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH.
+    // Booking sudah SUKSES dibuat di baris atas — kalau notifikasi ke admin
+    // gagal (misal field enum salah, atau tidak ada admin di DB), itu TIDAK
+    // BOLEH bikin booking yang sudah tersimpan dianggap gagal oleh user.
+    try {
+      await notifyAllAdmins({
+        title: "Booking Baru",
+        message: "Ada booking baru masuk yang perlu dikonfirmasi.",
+        type: "booking_new",
+        link: "/admin/booking",
+      });
+    } catch (notifError) {
+      console.error("Gagal kirim notifikasi booking baru ke admin:", notifError);
+    }
 
     return res.status(201).json({
       message: "Booking berhasil dibuat",
@@ -164,34 +171,40 @@ export const updateBookingHandler = async (
       ...(status   && { status }),
     });
 
-    // ✅ Notif ke user pas status booking berubah
+    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH. Update booking sudah
+    // sukses di atas — kalau kirim notifikasi ke user gagal, admin tetap
+    // harus dapat respons sukses (booking-nya memang sudah berubah statusnya).
     if (status && result?.userId) {
-      const courtName = result.court?.name ?? "lapangan";
+      try {
+        const courtName = result.court?.name ?? "lapangan";
 
-      if (status === "confirmed") {
-        await createNotification({
-          userId: result.userId,
-          title: "Booking Dikonfirmasi",
-          message: `Booking kamu untuk ${courtName} telah dikonfirmasi. Sampai jumpa di lapangan!`,
-          type: "booking_confirmed",
-          link: "/profile/riwayat-booking",
-        });
-      } else if (status === "cancelled") {
-        await createNotification({
-          userId: result.userId,
-          title: "Booking Dibatalkan",
-          message: `Booking kamu untuk ${courtName} telah dibatalkan.`,
-          type: "booking_cancelled",
-          link: "/profile/riwayat-booking",
-        });
-      } else if (status === "completed") {
-        await createNotification({
-          userId: result.userId,
-          title: "Booking Selesai",
-          message: `Terima kasih sudah bermain di ${courtName}! Sampai jumpa lagi.`,
-          type: "booking_completed",
-          link: "/profile/riwayat-booking",
-        });
+        if (status === "confirmed") {
+          await createNotification({
+            userId: result.userId,
+            title: "Booking Dikonfirmasi",
+            message: `Booking kamu untuk ${courtName} telah dikonfirmasi. Sampai jumpa di lapangan!`,
+            type: "booking_confirmed",
+            link: "/profile/riwayat-booking",
+          });
+        } else if (status === "cancelled") {
+          await createNotification({
+            userId: result.userId,
+            title: "Booking Dibatalkan",
+            message: `Booking kamu untuk ${courtName} telah dibatalkan.`,
+            type: "booking_cancelled",
+            link: "/profile/riwayat-booking",
+          });
+        } else if (status === "completed") {
+          await createNotification({
+            userId: result.userId,
+            title: "Booking Selesai",
+            message: `Terima kasih sudah bermain di ${courtName}! Sampai jumpa lagi.`,
+            type: "booking_completed",
+            link: "/profile/riwayat-booking",
+          });
+        }
+      } catch (notifError) {
+        console.error("Gagal kirim notifikasi perubahan status booking:", notifError);
       }
     }
 

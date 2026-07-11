@@ -9,7 +9,7 @@ import {
   approveMembershipRegistration,
   rejectMembershipRegistration,
 } from "../services/membershipregistrationservice.js";
-import { createNotification, notifyAllAdmins } from "../services/notificationservice.js"; // ✅ tambah import ini
+import { createNotification, notifyAllAdmins } from "../services/notificationservice.js";
 
 const resolveErrorStatus = (message: string) => {
   if (message.startsWith("NOT_FOUND:")) {
@@ -85,13 +85,19 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
 
     const registration = await createMembershipRegistration(payload);
 
-    // ✅ Notif ke semua admin: ada pendaftaran membership baru
-    await notifyAllAdmins({
-      title: "Pendaftaran Member Baru",
-      message: `Ada pendaftaran membership baru yang perlu diverifikasi.`,
-      type: "membership_new",
-      link: "/admin/member",
-    });
+    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH. Pendaftaran sudah
+    // sukses tersimpan di atas — kalau notif ke admin gagal, user tetap
+    // harus dapat respons sukses.
+    try {
+      await notifyAllAdmins({
+        title: "Pendaftaran Member Baru",
+        message: "Ada pendaftaran membership baru yang perlu diverifikasi.",
+        type: "membership_new",
+        link: "/admin/member",
+      });
+    } catch (notifError) {
+      console.error("Gagal kirim notifikasi pendaftaran membership baru:", notifError);
+    }
 
     return res.status(201).json({
       message: "Pendaftaran membership berhasil dibuat, menunggu approval",
@@ -189,16 +195,22 @@ export const approveMembershipRegistrationHandler = async (req: CustomRequest, r
     const result = await approveMembershipRegistration(id, approverId);
     const approvedRegistration = "registration" in result ? result.registration : result;
 
-    // ✅ Notif ke user: membership-nya udah aktif
+    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH. Approve sudah sukses
+    // di atas (status sudah active + UserMembership sudah dibuat) — kalau
+    // notif ke user gagal, admin tetap harus dapat respons sukses.
     if (approvedRegistration?.userId) {
-      const membershipName = approvedRegistration.membership?.name ?? "Membership";
-      await createNotification({
-        userId: approvedRegistration.userId,
-        title: "Membership Aktif",
-        message: `Selamat! Pendaftaran ${membershipName} kamu telah disetujui dan aktif sekarang.`,
-        type: "membership_active",
-        link: "/profile",
-      });
+      try {
+        const membershipName = approvedRegistration.membership?.name ?? "Membership";
+        await createNotification({
+          userId: approvedRegistration.userId,
+          title: "Membership Aktif",
+          message: `Selamat! Pendaftaran ${membershipName} kamu telah disetujui dan aktif sekarang.`,
+          type: "membership_active",
+          link: "/profile",
+        });
+      } catch (notifError) {
+        console.error("Gagal kirim notifikasi membership aktif:", notifError);
+      }
     }
 
     return res.json({
@@ -226,16 +238,21 @@ export const rejectMembershipRegistrationHandler = async (req: CustomRequest, re
 
     const registration = await rejectMembershipRegistration(id, reason);
 
-    // ✅ Notif ke user: pendaftaran ditolak
+    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH. Reject sudah sukses
+    // di atas — kalau notif ke user gagal, admin tetap harus dapat respons sukses.
     if (registration?.userId) {
-      const membershipName = registration.membership?.name ?? "Membership";
-      await createNotification({
-        userId: registration.userId,
-        title: "Pendaftaran Membership Ditolak",
-        message: `Maaf, pendaftaran ${membershipName} kamu ditolak. Alasan: ${reason}`,
-        type: "membership_rejected",
-        link: "/profile",
-      });
+      try {
+        const membershipName = registration.membership?.name ?? "Membership";
+        await createNotification({
+          userId: registration.userId,
+          title: "Pendaftaran Membership Ditolak",
+          message: `Maaf, pendaftaran ${membershipName} kamu ditolak. Alasan: ${reason}`,
+          type: "membership_rejected",
+          link: "/profile",
+        });
+      } catch (notifError) {
+        console.error("Gagal kirim notifikasi membership ditolak:", notifError);
+      }
     }
 
     return res.json({
