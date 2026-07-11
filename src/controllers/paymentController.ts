@@ -11,6 +11,8 @@ import {
   updatePaymentChannel,
   deletePaymentChannel,
 } from "../services/paymentService.js";
+import { createNotification } from "../services/notificationservice.js"; // ✅ TAMBAH IMPORT
+
 
 type PaymentRequestWithFile = CustomRequest & {
   file?: {
@@ -18,16 +20,14 @@ type PaymentRequestWithFile = CustomRequest & {
   };
 };
 
+
 // ======================
 // GET PAYMENT CHANNELS
 // ======================
 export const getChannels = async (_req: CustomRequest, res: Response) => {
   try {
     const channels = await getPaymentChannels();
-
-    return res.status(200).json({
-      data: channels,
-    });
+    return res.status(200).json({ data: channels });
   } catch (error: any) {
     return res.status(500).json({
       message: "Gagal mengambil daftar metode pembayaran",
@@ -35,6 +35,7 @@ export const getChannels = async (_req: CustomRequest, res: Response) => {
     });
   }
 };
+
 
 // ======================
 // GET PAYMENT DETAIL
@@ -49,30 +50,22 @@ export const getPayment = async (req: CustomRequest, res: Response) => {
       req.user!.role!
     );
 
-    return res.status(200).json({
-      data: payment,
-    });
+    return res.status(200).json({ data: payment });
   } catch (error: any) {
-    return res.status(403).json({
-      message: error.message,
-    });
+    return res.status(403).json({ message: error.message });
   }
 };
+
 
 // ======================
 // CHOOSE PAYMENT CHANNEL
 // ======================
-export const chooseChannel = async (
-  req: CustomRequest,
-  res: Response
-) => {
+export const chooseChannel = async (req: CustomRequest, res: Response) => {
   try {
     const { paymentChannelId, promoCode } = req.body;
 
     if (!paymentChannelId) {
-      return res.status(400).json({
-        message: "paymentChannelId wajib diisi",
-      });
+      return res.status(400).json({ message: "paymentChannelId wajib diisi" });
     }
 
     const payment = await choosePaymentChannel(
@@ -88,11 +81,10 @@ export const chooseChannel = async (
       data: payment,
     });
   } catch (error: any) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
+
 
 // ======================
 // UPLOAD PAYMENT PROOF
@@ -117,58 +109,68 @@ export const uploadProof = async (
 
     return res.status(200).json(result);
   } catch (error: any) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
 
+
 // ======================
-// CONFIRM PAYMENT (ADMIN)
+// ✅ CONFIRM PAYMENT (ADMIN) - dengan notifikasi ke user
 // ======================
-export const confirm = async (
-  req: CustomRequest,
-  res: Response
-) => {
+export const confirm = async (req: CustomRequest, res: Response) => {
   try {
     const result = await confirmPayment(Number(req.params.bookingId));
 
-    return res.status(200).json(result);
+    // ✅ Notif ke user: booking-nya di-approve
+    if (result.booking?.userId) {
+      const courtName = result.booking.court?.name ?? "lapangan";
+      await createNotification({
+        userId: result.booking.userId,
+        title: "Booking Dikonfirmasi",
+        message: `Pembayaran kamu untuk ${courtName} telah diverifikasi. Booking dikonfirmasi, sampai jumpa di lapangan!`,
+        type: "booking_confirmed",
+        link: "/profile/riwayat-booking",
+      });
+    }
+
+    return res.status(200).json({ message: result.message });
   } catch (error: any) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
 
+
 // ======================
-// REJECT PAYMENT (ADMIN)
+// ✅ REJECT PAYMENT (ADMIN) - dengan notifikasi ke user
 // ======================
-export const reject = async (
-  req: CustomRequest,
-  res: Response
-) => {
+export const reject = async (req: CustomRequest, res: Response) => {
   try {
     const { note } = req.body;
 
     if (!note) {
-      return res.status(400).json({
-        message: "Note wajib diisi",
+      return res.status(400).json({ message: "Note wajib diisi" });
+    }
+
+    const result = await rejectPayment(Number(req.params.bookingId), note);
+
+    // ✅ Notif ke user: pembayaran ditolak
+    if (result.booking?.userId) {
+      const courtName = result.booking.court?.name ?? "lapangan";
+      await createNotification({
+        userId: result.booking.userId,
+        title: "Pembayaran Ditolak",
+        message: `Pembayaran booking ${courtName} kamu ditolak. Alasan: ${note}`,
+        type: "booking_cancelled",
+        link: "/profile/riwayat-booking",
       });
     }
 
-    const result = await rejectPayment(
-      Number(req.params.bookingId),
-      note
-    );
-
-    return res.status(200).json(result);
+    return res.status(200).json({ message: result.message });
   } catch (error: any) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
+
 
 // ======================
 // CREATE PAYMENT CHANNEL
@@ -178,17 +180,10 @@ export const addChannel = async (
   res: Response
 ) => {
   try {
-    const {
-      name,
-      type,
-      accountNumber,
-      accountName,
-    } = req.body;
+    const { name, type, accountNumber, accountName } = req.body;
 
     if (!name || !type) {
-      return res.status(400).json({
-        message: "name dan type wajib diisi",
-      });
+      return res.status(400).json({ message: "name dan type wajib diisi" });
     }
 
     const qrImage = req.file
@@ -215,6 +210,7 @@ export const addChannel = async (
   }
 };
 
+
 // ======================
 // UPDATE PAYMENT CHANNEL
 // ======================
@@ -227,13 +223,10 @@ export const editChannel = async (
       ? `/uploads/${req.file.filename}`
       : req.body.qrImage;
 
-    const channel = await updatePaymentChannel(
-      Number(req.params.id),
-      {
-        ...req.body,
-        ...(qrImage && { qrImage }),
-      }
-    );
+    const channel = await updatePaymentChannel(Number(req.params.id), {
+      ...req.body,
+      ...(qrImage && { qrImage }),
+    });
 
     return res.status(200).json({
       message: "Channel pembayaran berhasil diupdate",
@@ -247,16 +240,13 @@ export const editChannel = async (
   }
 };
 
+
 // ======================
 // DELETE PAYMENT CHANNEL
 // ======================
-export const removeChannel = async (
-  req: CustomRequest,
-  res: Response
-) => {
+export const removeChannel = async (req: CustomRequest, res: Response) => {
   try {
     await deletePaymentChannel(Number(req.params.id));
-
     return res.status(200).json({
       message: "Channel pembayaran berhasil dinonaktifkan",
     });

@@ -1,11 +1,13 @@
 import { prisma } from "../lib/db.js";
 import { autoExpireBookings } from "./bookingService.js";
 
+
 export const getPaymentChannels = async () => {
   return await prisma.paymentChannel.findMany({
     where: { isActive: true },
   });
 };
+
 
 export const choosePaymentChannel = async (
   bookingId: number,
@@ -59,6 +61,7 @@ export const choosePaymentChannel = async (
   });
 };
 
+
 export const uploadPaymentProof = async (
   bookingId: number,
   userId: number,
@@ -77,9 +80,6 @@ export const uploadPaymentProof = async (
   if (payment.booking.userId !== userId && !isAdmin)
     throw new Error("Akses ditolak");
 
-  // Admin boleh melampirkan bukti kapan pun (mis. booking cash,
-  // atau dokumentasi manual), jadi validasi status & expired
-  // di bawah ini hanya berlaku untuk user biasa.
   if (!isAdmin) {
     if (payment.status === "confirmed")
       throw new Error("Pembayaran sudah dikonfirmasi");
@@ -102,9 +102,6 @@ export const uploadPaymentProof = async (
     prisma.payment.update({
       where: { bookingId },
       data: {
-        // Kalau admin upload dan status masih pending/expired/rejected,
-        // tetap majukan ke "uploaded" biar admin bisa langsung konfirmasi;
-        // kalau statusnya udah confirmed/cash, biarkan apa adanya.
         status: payment.status === "confirmed" ? payment.status : "uploaded",
         paidAt: payment.paidAt ?? new Date(),
       },
@@ -114,13 +111,15 @@ export const uploadPaymentProof = async (
   return { message: "Bukti pembayaran berhasil diupload" };
 };
 
+
+// ✅ CONFIRM PAYMENT - sekarang return booking (dengan court) buat notif
 export const confirmPayment = async (bookingId: number) => {
   const payment = await prisma.payment.findUnique({ where: { bookingId } });
   if (!payment) throw new Error("Payment tidak ditemukan");
   if (payment.status !== "uploaded")
     throw new Error("Belum ada bukti pembayaran yang diupload");
 
-  await prisma.$transaction([
+  const [, updatedBooking] = await prisma.$transaction([
     prisma.payment.update({
       where: { bookingId },
       data: { status: "confirmed", confirmedAt: new Date() },
@@ -128,14 +127,23 @@ export const confirmPayment = async (bookingId: number) => {
     prisma.booking.update({
       where: { id: bookingId },
       data: { status: "confirmed" },
+      include: { court: true },
     }),
   ]);
 
-  return { message: "Pembayaran berhasil dikonfirmasi" };
+  return {
+    message: "Pembayaran berhasil dikonfirmasi",
+    booking: updatedBooking,
+  };
 };
 
+
+// ✅ REJECT PAYMENT - sekarang return booking (dengan court) buat notif
 export const rejectPayment = async (bookingId: number, note: string) => {
-  const payment = await prisma.payment.findUnique({ where: { bookingId } });
+  const payment = await prisma.payment.findUnique({
+    where: { bookingId },
+    include: { booking: { include: { court: true } } },
+  });
   if (!payment) throw new Error("Payment tidak ditemukan");
 
   await prisma.payment.update({
@@ -143,15 +151,18 @@ export const rejectPayment = async (bookingId: number, note: string) => {
     data: { status: "rejected", note },
   });
 
-  return { message: "Pembayaran ditolak" };
+  return {
+    message: "Pembayaran ditolak",
+    booking: payment.booking,
+  };
 };
+
 
 export const getPaymentByBookingId = async (
   bookingId: number,
   userId: number,
   role: string
 ) => {
-  // sapu booking yang udah kelewatan waktu bayar sebelum ambil data
   await autoExpireBookings();
 
   const payment = await prisma.payment.findUnique({
@@ -176,6 +187,7 @@ export const getPaymentByBookingId = async (
   return payment;
 };
 
+
 // ── ADMIN: kelola payment channel ──
 export const createPaymentChannel = async (data: {
   name: string;
@@ -186,6 +198,7 @@ export const createPaymentChannel = async (data: {
 }) => {
   return await prisma.paymentChannel.create({ data });
 };
+
 
 export const updatePaymentChannel = async (
   id: number,
@@ -200,6 +213,7 @@ export const updatePaymentChannel = async (
 ) => {
   return await prisma.paymentChannel.update({ where: { id }, data });
 };
+
 
 export const deletePaymentChannel = async (id: number) => {
   return await prisma.paymentChannel.update({
