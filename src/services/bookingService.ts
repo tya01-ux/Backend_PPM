@@ -58,6 +58,15 @@ const withDisplayStatus = <T extends { status: string; startAt: Date; endAt: Dat
   status: resolveDisplayStatus(booking) as T["status"],
 });
 
+// ✅ BARU — dipakai admin dashboard buat nampilin badge "MEMBER", pertemuan
+// ke berapa, dan nama paket, di setiap row booking yang berasal dari
+// membership (userMembershipId != null).
+const BOOKING_MEMBERSHIP_INCLUDE = {
+  userMembership: {
+    include: { membership: true },
+  },
+} as const;
+
 // GET ALL
 export const getAllBookings = async (userId?: number, role?: string) => {
   if (role !== "admin" && typeof userId === "undefined") {
@@ -81,6 +90,7 @@ export const getAllBookings = async (userId?: number, role?: string) => {
           proofs: true,
         },
       },
+      ...BOOKING_MEMBERSHIP_INCLUDE,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -106,6 +116,7 @@ export const getBookingById = async (id: number) => {
           promo: true,
         },
       },
+      ...BOOKING_MEMBERSHIP_INCLUDE,
     },
   });
 
@@ -134,7 +145,7 @@ export const getBookedSlots = async (courtId: number, date: string) => {
   });
 };
 
-// CRETAE BOOKING
+// CRETAE BOOKING (reguler — bayar normal)
 export const createBooking = async (data: {
   startAt: Date;
   endAt: Date;
@@ -188,6 +199,123 @@ export const createBooking = async (data: {
     include: {
       court: true,
       payment: true,
+    },
+  });
+};
+
+// ✅ BARU — CREATE BOOKING VIA MEMBERSHIP (gratis, potong kuota, tanpa
+// Payment). Dipanggil kalau user pilih "Gunakan Membership" di step Metode
+// Booking. Sebelumnya fungsi ini SAMA SEKALI belum ada, jadi opsi membership
+// walaupun ke-render di UI, gak punya jalur backend yang beneran motong
+// kuota / bikin booking gratis — itu sebabnya "membership gak ngaruh".
+export const createMembershipBooking = async (data: {
+  startAt: Date;
+  endAt: Date;
+  notes?: string;
+  userId: number;
+  courtId: number;
+}) => {
+  const { startAt, endAt, notes, userId, courtId } = data;
+
+  const duration = Math.round(
+    (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60)
+  );
+  if (duration <= 0) throw new Error("Waktu tidak valid");
+
+  const userMembership = await prisma.userMembership.findFirst({
+    where: {
+      userId,
+      status: "active",
+      endDate: { gte: new Date() },
+    },
+    orderBy: { startDate: "desc" },
+  });
+
+  if (!userMembership) {
+    throw new Error("Kamu tidak punya membership aktif");
+  }
+
+  // Slot yang dipilih WAJIB persis sama dengan jadwal tetap membership:
+  // lapangan, hari dalam minggu, dan jam mulai.
+  if (userMembership.courtId !== courtId) {
+    throw new Error("Lapangan tidak sesuai jadwal tetap membershipmu");
+  }
+
+  if (userMembership.dayOfWeek === null || startAt.getDay() !== userMembership.dayOfWeek) {
+    throw new Error("Hari tidak sesuai jadwal tetap membershipmu");
+  }
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const requestedStart = `${pad(startAt.getHours())}:${pad(startAt.getMinutes())}`;
+  if (userMembership.startTime !== requestedStart) {
+    throw new Error("Jam tidak sesuai jadwal tetap membershipmu");
+  }
+
+  // ✅ Kuota dihitung ulang dari booking yang benar-benar ada (bukan counter
+  // manual) — konsisten sama getActiveUserMembershipByUserId di
+  // usermembershipservice.ts, biar gak ada celah "kepakai tapi gak kepotong".
+  const bookingsUsed = await prisma.booking.count({
+    where: {
+      userMembershipId: userMembership.id,
+      status: { not: "cancelled" },
+    },
+  });
+
+  if (bookingsUsed >= userMembership.sessionsTotal) {
+    throw new Error("Kuota membershipmu sudah habis bulan ini");
+  }
+
+  // Minggu ini belum boleh dipakai dua kali — cek udah ada booking di
+  // tanggal yang sama dari membership ini.
+  const dayStart = new Date(startAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const alreadyUsedThisWeek = await prisma.booking.findFirst({
+    where: {
+      userMembershipId: userMembership.id,
+      status: { not: "cancelled" },
+      startAt: { gte: dayStart, lt: dayEnd },
+    },
+  });
+
+  if (alreadyUsedThisWeek) {
+    throw new Error("Jadwal minggu ini sudah dipakai");
+  }
+
+  const court = await prisma.court.findUnique({ where: { id: courtId } });
+  if (!court || !court.isActive) throw new Error("Lapangan tidak tersedia");
+
+  // Slot fisik tetap harus kosong (jaga-jaga ada booking reguler/entry
+  // maintenance lain yang nyerempet jam yang sama).
+  const conflict = await prisma.booking.findFirst({
+    where: {
+      courtId,
+      status: { notIn: ["cancelled"] },
+      AND: [{ startAt: { lt: endAt } }, { endAt: { gt: startAt } }],
+    },
+  });
+  if (conflict) throw new Error("Jadwal lapangan sudah dibooking");
+
+  const bookingCode = generateBookingCode();
+
+  return await prisma.booking.create({
+    data: {
+      bookingCode,
+      startAt,
+      endAt,
+      duration,
+      courtPrice: 0,
+      notes: notes ?? null,
+      userId,
+      courtId,
+      userMembershipId: userMembership.id,
+      status: "confirmed", // langsung confirmed, gak lewat verifikasi admin — kuota udah dibayar di muka
+    },
+    include: {
+      court: true,
+      userMembership: { include: { membership: true } },
     },
   });
 };

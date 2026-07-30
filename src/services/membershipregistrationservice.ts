@@ -1,10 +1,108 @@
 import { prisma } from "../lib/db.js";
 import { MembershipStatus, PaymentChannelType } from "@prisma/client";
 
+// ✅ BARU — cek ketersediaan jadwal tetap (courtId + dayOfWeek + startTime +
+// endTime) untuk SELURUH minggu ke depan sesuai durasi paket membership,
+// sebelum registrasi dibuat. Dipanggil dari createMembershipRegistration,
+// dan juga diexpose lewat endpoint POST /membership-registrations/validate-schedule
+// biar frontend bisa cek dulu sebelum user submit form.
+export const validateMembershipSchedule = async (params: {
+  courtId: number;
+  dayOfWeek: number; // 0 = Minggu ... 6 = Sabtu
+  startTime: string; // "HH:mm"
+  endTime: string; // "HH:mm"
+  membershipId: number;
+}) => {
+  const { courtId, dayOfWeek, startTime, endTime, membershipId } = params;
+
+  const membership = await prisma.membership.findUnique({
+    where: { id: membershipId },
+  });
+  if (!membership) {
+    throw new Error("NOT_FOUND: Membership tidak ditemukan");
+  }
+
+  const court = await prisma.court.findUnique({ where: { id: courtId } });
+  if (!court || !court.isActive) {
+    throw new Error("CONFLICT: Lapangan tidak tersedia");
+  }
+
+  const totalWeeks = Math.max(1, Math.ceil(membership.duration / 7));
+
+  // Occurrence pertama dari dayOfWeek mulai HARI INI (bukan mundur ke masa lalu)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const firstOccurrence = new Date(today);
+  const diff = (dayOfWeek - firstOccurrence.getDay() + 7) % 7;
+  firstOccurrence.setDate(firstOccurrence.getDate() + diff);
+
+  const [sh, sm] = startTime.split(":").map(Number) as [number, number];
+  const [eh, em] = endTime.split(":").map(Number) as [number, number];
+
+  const conflicts: { date: string; reason: string }[] = [];
+
+  for (let i = 0; i < totalWeeks; i++) {
+    const occDate = new Date(firstOccurrence);
+    occDate.setDate(occDate.getDate() + i * 7);
+
+    const slotStart = new Date(occDate);
+    slotStart.setHours(sh, sm, 0, 0);
+
+    const slotEnd = new Date(occDate);
+    if (eh === 0 && em === 0) {
+      // "00:00" berarti tengah malam hari berikutnya (venue buka lewat tengah malam)
+      slotEnd.setDate(slotEnd.getDate() + 1);
+      slotEnd.setHours(0, 0, 0, 0);
+    } else {
+      slotEnd.setHours(eh, em, 0, 0);
+    }
+
+    const bookingConflict = await prisma.booking.findFirst({
+      where: {
+        courtId,
+        status: { notIn: ["cancelled"] },
+        AND: [{ startAt: { lt: slotEnd } }, { endAt: { gt: slotStart } }],
+      },
+    });
+
+    if (bookingConflict) {
+      conflicts.push({
+        date: slotStart.toISOString().slice(0, 10),
+        reason: "Sudah ada booking di jam ini",
+      });
+      continue;
+    }
+
+    const scheduleConflict = await prisma.courtSchedule.findFirst({
+      where: {
+        courtId,
+        AND: [{ startAt: { lt: slotEnd } }, { endAt: { gt: slotStart } }],
+      },
+    });
+
+    if (scheduleConflict) {
+      conflicts.push({
+        date: slotStart.toISOString().slice(0, 10),
+        reason: "Lapangan maintenance/event di jam ini",
+      });
+    }
+  }
+
+  return {
+    available: conflicts.length === 0,
+    totalWeeks,
+    conflicts,
+  };
+};
+
 // CREATE — user daftar membership, status awal selalu "pending"
 export const createMembershipRegistration = async (data: {
   userId: number;
   membershipId: number;
+  courtId?: number;
+  dayOfWeek?: number;
+  startTime?: string;
+  endTime?: string;
   paymentMethod?: PaymentChannelType;
   paymentChannelId?: number;
   proofImage?: string;
@@ -32,10 +130,47 @@ export const createMembershipRegistration = async (data: {
     );
   }
 
+  const hasSchedule =
+    data.courtId !== undefined ||
+    data.dayOfWeek !== undefined ||
+    data.startTime !== undefined ||
+    data.endTime !== undefined;
+
+  if (hasSchedule) {
+    if (
+      data.courtId === undefined ||
+      data.dayOfWeek === undefined ||
+      !data.startTime ||
+      !data.endTime
+    ) {
+      throw new Error(
+        "CONFLICT: courtId, dayOfWeek, startTime, dan endTime harus diisi lengkap untuk jadwal tetap"
+      );
+    }
+
+    const scheduleCheck = await validateMembershipSchedule({
+      courtId: data.courtId,
+      dayOfWeek: data.dayOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      membershipId: data.membershipId,
+    });
+
+    if (!scheduleCheck.available) {
+      throw new Error(
+        "CONFLICT: Jadwal yang dipilih bentrok di beberapa minggu ke depan, silakan pilih jadwal lain"
+      );
+    }
+  }
+
   return await prisma.membershipRegistration.create({
     data: {
       userId: data.userId,
       membershipId: data.membershipId,
+      courtId: data.courtId ?? null,
+      dayOfWeek: data.dayOfWeek ?? null,
+      startTime: data.startTime ?? null,
+      endTime: data.endTime ?? null,
       paymentMethod: data.paymentMethod ?? null,
       paymentChannelId: data.paymentChannelId ?? null,
       proofImageUrl: data.proofImage ?? null,
@@ -48,7 +183,7 @@ export const createMembershipRegistration = async (data: {
 // GET ALL
 export const getAllMembershipRegistrations = async () => {
   return await prisma.membershipRegistration.findMany({
-    include: { user: true, membership: true, paymentChannel: true, approvedBy: true },
+    include: { user: true, membership: true, paymentChannel: true, approvedBy: true, court: true },
     orderBy: { createdAt: "desc" },
   });
 };
@@ -57,7 +192,7 @@ export const getAllMembershipRegistrations = async () => {
 export const getMembershipRegistrationById = async (id: number) => {
   return await prisma.membershipRegistration.findUnique({
     where: { id },
-    include: { user: true, membership: true, paymentChannel: true, approvedBy: true },
+    include: { user: true, membership: true, paymentChannel: true, approvedBy: true, court: true },
   });
 };
 
@@ -176,6 +311,12 @@ export const approveMembershipRegistration = async (
         membershipId: registration.membershipId,
         startDate,
         endDate,
+        courtId: registration.courtId,
+        dayOfWeek: registration.dayOfWeek,
+        startTime: registration.startTime,
+        endTime: registration.endTime,
+        sessionsTotal: registration.membership.sessionsPerMonth,
+        sessionsUsed: 0, // hanya nilai awal — selalu dihitung ulang secara derived saat di-fetch
       },
     });
 
@@ -209,6 +350,6 @@ export const rejectMembershipRegistration = async (id: number, reason: string) =
       rejectedAt: new Date(),
       rejectReason: reason,
     },
-    include: { membership: true }, // ✅ wajib biar notifikasi bisa baca nama paket
+    include: { membership: true }, 
   });
 };

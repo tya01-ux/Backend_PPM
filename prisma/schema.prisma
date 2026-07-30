@@ -28,8 +28,7 @@ model User {
   bookings                Booking[]
   memberships             UserMembership[]
   membershipRegistrations MembershipRegistration[]
-  notifications           Notification[]  
-
+  notifications           Notification[]
 
   // relasi baru: dipakai untuk audit trail siapa yang approve/reject registrasi
   approvedRegistrations MembershipRegistration[] @relation("ApprovedBy")
@@ -55,6 +54,10 @@ model Court {
 
   // relasi baru: entry maintenance/event/blocked untuk lapangan ini
   courtSchedules CourtSchedule[]
+
+  // ✅ BARU — relasi balik untuk fitur membership jadwal rutin
+  membershipRegistrations MembershipRegistration[]
+  userMemberships         UserMembership[]
 }
 
 // BOOKING
@@ -76,12 +79,18 @@ model Booking {
   userId  Int
   courtId Int
 
-  user    User     @relation(fields: [userId], references: [id])
-  court   Court    @relation(fields: [courtId], references: [id])
-  payment Payment?
+  // ✅ BARU — nullable, cuma keisi kalau booking ini di-generate otomatis
+  // dari jatah membership rutin (bukan booking reguler)
+  userMembershipId Int?
+
+  user           User            @relation(fields: [userId], references: [id])
+  court          Court           @relation(fields: [courtId], references: [id])
+  payment        Payment?
+  userMembership UserMembership? @relation(fields: [userMembershipId], references: [id])
 
   @@index([courtId, startAt, endAt])
   @@index([userId])
+  @@index([userMembershipId])
 }
 
 // PAYMENT CHANNEL
@@ -159,27 +168,35 @@ model Promo {
 }
 
 model Membership {
-  id          Int      @id @default(autoincrement())
-  name        String
-  price       Int
-  duration    Int              // masa berlaku dalam HARI (dipakai saat approve registration untuk hitung endDate)
-  quotaLabel  String?          // label kuota, contoh: "4 Jam / Bulan". Null = tidak ditampilkan
-  description String?
-  benefits    Json             // array string, contoh: ["Harga lebih hemat", "Booking prioritas"]
-  isPopular   Boolean  @default(false) // munculin badge "Paling Hemat" di frontend
-  theme       String   @default("blue") // salah satu dari: slate | amber | blue | violet
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  name             String
+  price            Int
+  duration         Int // masa berlaku dalam HARI (dipakai saat approve registration untuk hitung endDate)
+  sessionsPerMonth Int      @default(4) // ✅ BARU — jumlah sesi bermain per bulan (4/8/12)
+  quotaLabel       String? // label kuota, contoh: "4 Jam / Bulan". Null = tidak ditampilkan
+  description      String?
+  benefits         Json // array string, contoh: ["Harga lebih hemat", "Booking prioritas"]
+  isPopular        Boolean  @default(false) // munculin badge "Paling Hemat" di frontend
+  theme            String   @default("blue") // salah satu dari: slate | amber | blue | violet
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   registrations   MembershipRegistration[]
   userMemberships UserMembership[]
 }
 
 model MembershipRegistration {
-  id           Int               @id @default(autoincrement())
+  id           Int              @id @default(autoincrement())
   userId       Int
   membershipId Int
-  status       MembershipStatus  @default(pending) // pending -> verification -> active | rejected
+  status       MembershipStatus @default(pending) // pending -> verification -> active | rejected
+
+  // ✅ BARU — jadwal rutin yang dipilih user saat daftar (dipakai buat generate
+  // booking mingguan otomatis saat admin approve)
+  courtId   Int?
+  dayOfWeek Int? // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
+  startTime String? // format "HH:mm", contoh "19:00"
+  endTime   String? // format "HH:mm", contoh "20:00"
 
   paymentChannelId Int?
   paymentMethod    PaymentChannelType?
@@ -192,13 +209,14 @@ model MembershipRegistration {
   rejectedAt   DateTime?
   rejectReason String?
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user           User            @relation(fields: [userId], references: [id])
   membership     Membership      @relation(fields: [membershipId], references: [id])
   paymentChannel PaymentChannel? @relation(fields: [paymentChannelId], references: [id])
   approvedBy     User?           @relation("ApprovedBy", fields: [approvedById], references: [id])
+  court          Court?          @relation(fields: [courtId], references: [id])
 
   @@index([userId])
   @@index([membershipId])
@@ -214,8 +232,21 @@ model UserMembership {
   status       String   @default("active") // active | expired
   createdAt    DateTime @default(now())
 
+  // ✅ BARU — salinan jadwal rutin dari registrasi (independen kalau registrasi
+  // aslinya diubah/dihapus), plus tracking kuota sesi
+  courtId       Int?
+  dayOfWeek     Int?
+  startTime     String?
+  endTime       String?
+  sessionsTotal Int      @default(4) // total kuota sesi bulan ini
+  sessionsUsed  Int      @default(0) // berapa sesi yang sudah dijadwalkan/kepakai
+
   user       User       @relation(fields: [userId], references: [id])
   membership Membership @relation(fields: [membershipId], references: [id])
+  court      Court?     @relation(fields: [courtId], references: [id])
+
+  // ✅ BARU — relasi balik ke booking-booking mingguan yang di-generate otomatis
+  bookings Booking[]
 
   @@index([userId])
   @@index([membershipId])
@@ -248,7 +279,7 @@ model CourtSchedule {
   courtId Int
   type    ScheduleType
 
-  title String  // contoh: "Pembersihan Lapangan", "PUMA Cup", "Event Sponsor"
+  title String // contoh: "Pembersihan Lapangan", "PUMA Cup", "Event Sponsor"
   notes String?
 
   startAt DateTime
@@ -308,23 +339,23 @@ enum ScheduleType {
 
 // BARU — dipakai di Notification.type
 enum NotificationType {
-  booking_new          // ke admin: ada booking baru masuk
-  booking_confirmed    // ke user: booking-nya di-approve admin
-  booking_cancelled    // ke user: booking-nya dibatalkan/ditolak
-  booking_completed    // ke user: booking selesai
-  membership_new       // ke admin: ada registrasi membership baru
-  membership_active    // ke user: membership-nya diaktifkan admin
-  membership_rejected  // ke user: registrasi membership ditolak
-  schedule_new         // ke user/broadcast: ada maintenance/event baru
+  booking_new // ke admin: ada booking baru masuk
+  booking_confirmed // ke user: booking-nya di-approve admin
+  booking_cancelled // ke user: booking-nya dibatalkan/ditolak
+  booking_completed // ke user: booking selesai
+  membership_new // ke admin: ada registrasi membership baru
+  membership_active // ke user: membership-nya diaktifkan admin
+  membership_rejected // ke user: registrasi membership ditolak
+  schedule_new // ke user/broadcast: ada maintenance/event baru
 }
 
 model Notification {
-  id      Int    @id @default(autoincrement())
+  id      Int               @id @default(autoincrement())
   userId  Int
   title   String
   message String
   type    NotificationType
-  isRead  Boolean @default(false)
+  isRead  Boolean           @default(false)
   link    String?
 
   createdAt DateTime @default(now())

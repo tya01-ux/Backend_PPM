@@ -1,10 +1,13 @@
 import { Request, Response } from "express";
+import { CustomRequest } from "../middlewares/authMiddleware.js";
 import {
   getAllUserMemberships,
   getUserMembershipById,
   getUserMembershipsByUserId,
   createUserMembership,
   deleteUserMembershipById,
+  getActiveUserMembershipByUserId,
+  getUserMembershipDetail,
 } from "../services/usermembershipservice.js";
 
 // GET ALL USER MEMBERSHIPS
@@ -74,6 +77,54 @@ export const getUserMembershipByUser = async (
     return res.status(500).json({
       message: error.message,
     });
+  }
+};
+
+// ✅ BARU — membership aktif milik user yang SEDANG LOGIN (dari token, bukan
+// userId manual di URL). Ini yang dipanggil halaman Booking buat tau apakah
+// opsi "Gunakan Membership" bisa di-unlock atau tidak, plus jadwal tetap +
+// sisa kuotanya.
+export const getMyActiveUserMembership = async (req: CustomRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userMembership = await getActiveUserMembershipByUserId(userId);
+
+    // data: null artinya user belum/gak punya membership aktif — ini kondisi
+    // valid (bukan error), frontend tinggal nampilin state "belum member".
+    return res.json({ data: userMembership });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+// ✅ BARU — detail satu UserMembership dengan sessionsUsed & weeklyProgress
+// yang dihitung ulang (derived). User cuma boleh liat punya sendiri, admin
+// boleh liat semua.
+export const getUserMembershipDetailHandler = async (req: CustomRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "ID user membership tidak valid" });
+    }
+
+    const detail = await getUserMembershipDetail(id);
+    if (!detail) {
+      return res.status(404).json({ message: "User membership tidak ditemukan" });
+    }
+
+    const isOwner = detail.userId === req.user?.userId;
+    const isAdmin = req.user?.role?.toLowerCase() === "admin";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Akses ditolak" });
+    }
+
+    return res.json({ data: detail });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message });
   }
 };
 

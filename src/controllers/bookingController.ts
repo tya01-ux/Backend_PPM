@@ -3,6 +3,7 @@ import {
   getAllBookings,
   getBookingById,
   createBooking,
+  createMembershipBooking,
   cancelBooking,
   updateBooking,
   getBookedSlots,
@@ -91,7 +92,7 @@ export const getBooking = async (req: CustomRequest, res: Response) => {
 // CREATE BOOKING
 export const addBooking = async (req: CustomRequest, res: Response) => {
   try {
-    const { startAt, endAt, courtId, notes, userId } = req.body;
+    const { startAt, endAt, courtId, notes, userId, useMembership } = req.body;
 
     if (!startAt || !endAt || !courtId) {
       return res.status(400).json({
@@ -112,13 +113,26 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
         ? Number(userId)
         : req.user!.userId;
 
-    const booking = await createBooking({
-      startAt: new Date(startAt),
-      endAt: new Date(endAt),
-      courtId: courtIdNumber,
-      userId: targetUserId,
-      notes,
-    });
+    // ✅ BARU — cabang ke booking via membership (gratis, potong kuota,
+    // tanpa Payment) kalau user pilih "Gunakan Membership" di step Metode
+    // Booking. Sebelumnya flag ini SAMA SEKALI gak dibaca dari body, jadi
+    // request-nya diproses kayak booking reguler biasa (selalu bikin
+    // Payment berbayar) walau frontend-nya kirim niat "pakai membership".
+    const booking = useMembership
+      ? await createMembershipBooking({
+          startAt: new Date(startAt),
+          endAt: new Date(endAt),
+          courtId: courtIdNumber,
+          userId: targetUserId,
+          notes,
+        })
+      : await createBooking({
+          startAt: new Date(startAt),
+          endAt: new Date(endAt),
+          courtId: courtIdNumber,
+          userId: targetUserId,
+          notes,
+        });
 
     // ✅ FIX: notifikasi dibungkus try-catch TERPISAH.
     // Booking sudah SUKSES dibuat di baris atas — kalau notifikasi ke admin
@@ -126,8 +140,10 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
     // BOLEH bikin booking yang sudah tersimpan dianggap gagal oleh user.
     try {
       await notifyAllAdmins({
-        title: "Booking Baru",
-        message: "Ada booking baru masuk yang perlu dikonfirmasi.",
+        title: useMembership ? "Booking Membership Baru" : "Booking Baru",
+        message: useMembership
+          ? "Ada booking baru dari jadwal tetap membership."
+          : "Ada booking baru masuk yang perlu dikonfirmasi.",
         type: "booking_new",
         link: "/admin/booking",
       });
@@ -136,7 +152,9 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
     }
 
     return res.status(201).json({
-      message: "Booking berhasil dibuat",
+      message: useMembership
+        ? "Booking via membership berhasil dibuat"
+        : "Booking berhasil dibuat",
       data: booking,
     });
   } catch (error: any) {

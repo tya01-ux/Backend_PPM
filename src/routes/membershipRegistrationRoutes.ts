@@ -7,6 +7,7 @@ import {
   moveToVerificationHandler,
   approveMembershipRegistrationHandler,
   rejectMembershipRegistrationHandler,
+  validateScheduleHandler,
 } from "../controllers/membershipregistrationcontroller.js";
 import { authenticate, checkAdmin } from "../middlewares/authMiddleware.js";
 import { uploadMembershipProof } from "../middlewares/upload.js";
@@ -14,6 +15,7 @@ import { uploadMembershipProof } from "../middlewares/upload.js";
 const router = Router();
 
 router.get("/", authenticate, checkAdmin, getMembershipRegistrations);
+router.post("/validate-schedule", authenticate, validateScheduleHandler);
 router.get("/:id", authenticate, getMembershipRegistration);
 router.post("/", authenticate, uploadMembershipProof.single("proofImage"), addMembershipRegistration);
 router.patch("/:id/proof", authenticate, uploadMembershipProof.single("proofImage"), submitPaymentProofHandler);

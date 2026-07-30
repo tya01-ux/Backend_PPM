@@ -8,6 +8,7 @@ import {
   moveToVerification,
   approveMembershipRegistration,
   rejectMembershipRegistration,
+  validateMembershipSchedule,
 } from "../services/membershipregistrationservice.js";
 import { createNotification, notifyAllAdmins } from "../services/notificationservice.js";
 
@@ -56,11 +57,58 @@ export const getMembershipRegistration = async (req: CustomRequest, res: Respons
   }
 };
 
+// ✅ BARU — cek ketersediaan jadwal tetap (untuk seluruh minggu ke depan
+// sesuai durasi paket) SEBELUM user submit form registrasi. Dipanggil dari
+// step "pilih jadwal tetap" di form membership.
+export const validateScheduleHandler = async (req: CustomRequest, res: Response) => {
+  try {
+    const { courtId, dayOfWeek, startTime, endTime, membershipId } = req.body;
+
+    if (
+      courtId === undefined ||
+      courtId === null ||
+      dayOfWeek === undefined ||
+      dayOfWeek === null ||
+      !startTime ||
+      !endTime ||
+      !membershipId
+    ) {
+      return res.status(400).json({
+        message: "courtId, dayOfWeek, startTime, endTime, dan membershipId wajib diisi",
+      });
+    }
+
+    const result = await validateMembershipSchedule({
+      courtId: Number(courtId),
+      dayOfWeek: Number(dayOfWeek),
+      startTime,
+      endTime,
+      membershipId: Number(membershipId),
+    });
+
+    return res.json({ data: result });
+  } catch (error: any) {
+    const { status, message } = resolveErrorStatus(error.message);
+    return res.status(status).json({ message });
+  }
+};
+
 // CREATE — userId dari token
 export const addMembershipRegistration = async (req: CustomRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { membershipId, paymentMethod, paymentChannelId, notes } = req.body;
+    const {
+      membershipId,
+      paymentMethod,
+      paymentChannelId,
+      notes,
+      // ✅ BARU — jadwal tetap yang dipilih user. Sebelumnya field ini
+      // sama sekali gak di-destructure dari body, jadi gak pernah kesimpen.
+      courtId,
+      dayOfWeek,
+      startTime,
+      endTime,
+    } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -82,6 +130,15 @@ export const addMembershipRegistration = async (req: CustomRequest, res: Respons
     if (paymentChannelId !== undefined && paymentChannelId !== null && paymentChannelId !== "") {
       payload.paymentChannelId = Number(paymentChannelId);
     }
+
+    if (courtId !== undefined && courtId !== null && courtId !== "") {
+      payload.courtId = Number(courtId);
+    }
+    if (dayOfWeek !== undefined && dayOfWeek !== null && dayOfWeek !== "") {
+      payload.dayOfWeek = Number(dayOfWeek);
+    }
+    if (startTime) payload.startTime = startTime;
+    if (endTime) payload.endTime = endTime;
 
     const registration = await createMembershipRegistration(payload);
 
