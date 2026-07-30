@@ -12,13 +12,11 @@ export type MembershipInput = {
   benefits: string[];
   isPopular?: boolean;
   theme: MembershipTheme;
+  requiresFixedSchedule?: boolean;
 };
 
 export type MembershipUpdateInput = Partial<MembershipInput>;
 
-// Validasi bersama untuk create & update — dipanggil dari controller
-// sebelum data masuk ke Prisma, biar frontend nggak pernah nerima
-// data korup (theme sembarangan / benefits bukan array).
 export const validateMembershipInput = (
   data: Partial<MembershipInput>,
   { isUpdate = false }: { isUpdate?: boolean } = {}
@@ -58,6 +56,14 @@ export const validateMembershipInput = (
     }
   }
 
+  // requiresFixedSchedule selalu opsional (punya default di DB), tapi kalau
+  // dikirim wajib boolean beneran — jangan sampai "false" (string) ke-anggap truthy.
+  if (data.requiresFixedSchedule !== undefined) {
+    if (typeof data.requiresFixedSchedule !== "boolean") {
+      errors.push("requiresFixedSchedule wajib berupa boolean");
+    }
+  }
+
   return errors;
 };
 
@@ -87,6 +93,7 @@ export const createMembership = async (data: MembershipInput) => {
       benefits: data.benefits,
       isPopular: data.isPopular ?? false,
       theme: data.theme,
+      requiresFixedSchedule: data.requiresFixedSchedule ?? true,
     },
   });
 };

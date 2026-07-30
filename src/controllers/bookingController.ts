@@ -113,11 +113,6 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
         ? Number(userId)
         : req.user!.userId;
 
-    // ✅ BARU — cabang ke booking via membership (gratis, potong kuota,
-    // tanpa Payment) kalau user pilih "Gunakan Membership" di step Metode
-    // Booking. Sebelumnya flag ini SAMA SEKALI gak dibaca dari body, jadi
-    // request-nya diproses kayak booking reguler biasa (selalu bikin
-    // Payment berbayar) walau frontend-nya kirim niat "pakai membership".
     const booking = useMembership
       ? await createMembershipBooking({
           startAt: new Date(startAt),
@@ -134,10 +129,7 @@ export const addBooking = async (req: CustomRequest, res: Response) => {
           notes,
         });
 
-    // ✅ FIX: notifikasi dibungkus try-catch TERPISAH.
-    // Booking sudah SUKSES dibuat di baris atas — kalau notifikasi ke admin
-    // gagal (misal field enum salah, atau tidak ada admin di DB), itu TIDAK
-    // BOLEH bikin booking yang sudah tersimpan dianggap gagal oleh user.
+
     try {
       await notifyAllAdmins({
         title: useMembership ? "Booking Membership Baru" : "Booking Baru",

@@ -1,11 +1,6 @@
 import { prisma } from "../lib/db.js";
 import { MembershipStatus, PaymentChannelType } from "@prisma/client";
 
-// ✅ BARU — cek ketersediaan jadwal tetap (courtId + dayOfWeek + startTime +
-// endTime) untuk SELURUH minggu ke depan sesuai durasi paket membership,
-// sebelum registrasi dibuat. Dipanggil dari createMembershipRegistration,
-// dan juga diexpose lewat endpoint POST /membership-registrations/validate-schedule
-// biar frontend bisa cek dulu sebelum user submit form.
 export const validateMembershipSchedule = async (params: {
   courtId: number;
   dayOfWeek: number; // 0 = Minggu ... 6 = Sabtu
@@ -136,7 +131,9 @@ export const createMembershipRegistration = async (data: {
     data.startTime !== undefined ||
     data.endTime !== undefined;
 
-  if (hasSchedule) {
+  if (membership.requiresFixedSchedule) {
+    // Paket fixed-schedule (Bronze/Silver/Gold) — jadwal WAJIB lengkap, tidak
+    // boleh sebagian atau kosong sama sekali.
     if (
       data.courtId === undefined ||
       data.dayOfWeek === undefined ||
@@ -144,7 +141,7 @@ export const createMembershipRegistration = async (data: {
       !data.endTime
     ) {
       throw new Error(
-        "CONFLICT: courtId, dayOfWeek, startTime, dan endTime harus diisi lengkap untuk jadwal tetap"
+        "CONFLICT: courtId, dayOfWeek, startTime, dan endTime harus diisi lengkap untuk paket ini"
       );
     }
 
@@ -161,16 +158,22 @@ export const createMembershipRegistration = async (data: {
         "CONFLICT: Jadwal yang dipilih bentrok di beberapa minggu ke depan, silakan pilih jadwal lain"
       );
     }
+  } else if (hasSchedule) {
+    // Paket flexible (Platinum) — user bebas pilih slot nanti lewat halaman
+    // Booking, jadi jadwal tetap TIDAK BOLEH diisi saat registrasi.
+    throw new Error(
+      "CONFLICT: Paket ini tidak menggunakan jadwal tetap, silakan kosongkan pilihan jadwal"
+    );
   }
 
   return await prisma.membershipRegistration.create({
     data: {
       userId: data.userId,
       membershipId: data.membershipId,
-      courtId: data.courtId ?? null,
-      dayOfWeek: data.dayOfWeek ?? null,
-      startTime: data.startTime ?? null,
-      endTime: data.endTime ?? null,
+      courtId: membership.requiresFixedSchedule ? data.courtId ?? null : null,
+      dayOfWeek: membership.requiresFixedSchedule ? data.dayOfWeek ?? null : null,
+      startTime: membership.requiresFixedSchedule ? data.startTime ?? null : null,
+      endTime: membership.requiresFixedSchedule ? data.endTime ?? null : null,
       paymentMethod: data.paymentMethod ?? null,
       paymentChannelId: data.paymentChannelId ?? null,
       proofImageUrl: data.proofImage ?? null,

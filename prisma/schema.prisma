@@ -171,13 +171,14 @@ model Membership {
   id               Int      @id @default(autoincrement())
   name             String
   price            Int
-  duration         Int // masa berlaku dalam HARI (dipakai saat approve registration untuk hitung endDate)
-  sessionsPerMonth Int      @default(4) // ✅ BARU — jumlah sesi bermain per bulan (4/8/12)
-  quotaLabel       String? // label kuota, contoh: "4 Jam / Bulan". Null = tidak ditampilkan
+  duration         Int
+  sessionsPerMonth Int      @default(4)
+  requiresFixedSchedule Boolean @default(true) 
+  quotaLabel       String?
   description      String?
-  benefits         Json // array string, contoh: ["Harga lebih hemat", "Booking prioritas"]
-  isPopular        Boolean  @default(false) // munculin badge "Paling Hemat" di frontend
-  theme            String   @default("blue") // salah satu dari: slate | amber | blue | violet
+  benefits         Json
+  isPopular        Boolean  @default(false)
+  theme            String   @default("blue")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -191,8 +192,6 @@ model MembershipRegistration {
   membershipId Int
   status       MembershipStatus @default(pending) // pending -> verification -> active | rejected
 
-  // ✅ BARU — jadwal rutin yang dipilih user saat daftar (dipakai buat generate
-  // booking mingguan otomatis saat admin approve)
   courtId   Int?
   dayOfWeek Int? // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
   startTime String? // format "HH:mm", contoh "19:00"
@@ -232,8 +231,6 @@ model UserMembership {
   status       String   @default("active") // active | expired
   createdAt    DateTime @default(now())
 
-  // ✅ BARU — salinan jadwal rutin dari registrasi (independen kalau registrasi
-  // aslinya diubah/dihapus), plus tracking kuota sesi
   courtId       Int?
   dayOfWeek     Int?
   startTime     String?
@@ -245,7 +242,6 @@ model UserMembership {
   membership Membership @relation(fields: [membershipId], references: [id])
   court      Court?     @relation(fields: [courtId], references: [id])
 
-  // ✅ BARU — relasi balik ke booking-booking mingguan yang di-generate otomatis
   bookings Booking[]
 
   @@index([userId])

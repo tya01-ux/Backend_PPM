@@ -228,6 +228,7 @@ export const createMembershipBooking = async (data: {
       status: "active",
       endDate: { gte: new Date() },
     },
+    include: { membership: true },
     orderBy: { startDate: "desc" },
   });
 
@@ -235,25 +236,32 @@ export const createMembershipBooking = async (data: {
     throw new Error("Kamu tidak punya membership aktif");
   }
 
-  // Slot yang dipilih WAJIB persis sama dengan jadwal tetap membership:
-  // lapangan, hari dalam minggu, dan jam mulai.
-  if (userMembership.courtId !== courtId) {
-    throw new Error("Lapangan tidak sesuai jadwal tetap membershipmu");
-  }
+  // ✅ Aturan slot beda tergantung tipe paket (membership.requiresFixedSchedule):
+  // - Fixed-schedule (Bronze/Silver/Gold): slot WAJIB persis sama dengan
+  //   jadwal tetap yang dikunci saat registrasi (lapangan, hari, jam).
+  // - Flexible (Platinum): tidak ada jadwal terkunci sama sekali, jadi tidak
+  //   ada yang perlu di-cocokkan — user bebas pilih lapangan/hari/jam apa
+  //   saja, cukup kuota yang jadi penentu.
+  if (userMembership.membership.requiresFixedSchedule) {
+    if (userMembership.courtId !== courtId) {
+      throw new Error("Lapangan tidak sesuai jadwal tetap membershipmu");
+    }
 
-  if (userMembership.dayOfWeek === null || startAt.getDay() !== userMembership.dayOfWeek) {
-    throw new Error("Hari tidak sesuai jadwal tetap membershipmu");
-  }
+    if (userMembership.dayOfWeek === null || startAt.getDay() !== userMembership.dayOfWeek) {
+      throw new Error("Hari tidak sesuai jadwal tetap membershipmu");
+    }
 
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const requestedStart = `${pad(startAt.getHours())}:${pad(startAt.getMinutes())}`;
-  if (userMembership.startTime !== requestedStart) {
-    throw new Error("Jam tidak sesuai jadwal tetap membershipmu");
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const requestedStart = `${pad(startAt.getHours())}:${pad(startAt.getMinutes())}`;
+    if (userMembership.startTime !== requestedStart) {
+      throw new Error("Jam tidak sesuai jadwal tetap membershipmu");
+    }
   }
 
   // ✅ Kuota dihitung ulang dari booking yang benar-benar ada (bukan counter
   // manual) — konsisten sama getActiveUserMembershipByUserId di
   // usermembershipservice.ts, biar gak ada celah "kepakai tapi gak kepotong".
+  // Berlaku sama untuk fixed maupun flexible — keduanya tetap dibatasi kuota.
   const bookingsUsed = await prisma.booking.count({
     where: {
       userMembershipId: userMembership.id,
@@ -265,23 +273,28 @@ export const createMembershipBooking = async (data: {
     throw new Error("Kuota membershipmu sudah habis bulan ini");
   }
 
-  // Minggu ini belum boleh dipakai dua kali — cek udah ada booking di
-  // tanggal yang sama dari membership ini.
-  const dayStart = new Date(startAt);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
+  // Guard "jadwal minggu ini udah dipakai" cuma relevan buat fixed-schedule
+  // (satu slot tetap yang sama tiap minggu, gak boleh dipakai 2x di tanggal
+  // yang sama). Member flexible sengaja TIDAK kena guard ini — dia boleh
+  // booking lebih dari sekali di hari yang sama selama kuotanya masih ada,
+  // karena memang tidak terikat satu slot mingguan.
+  if (userMembership.membership.requiresFixedSchedule) {
+    const dayStart = new Date(startAt);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
 
-  const alreadyUsedThisWeek = await prisma.booking.findFirst({
-    where: {
-      userMembershipId: userMembership.id,
-      status: { not: "cancelled" },
-      startAt: { gte: dayStart, lt: dayEnd },
-    },
-  });
+    const alreadyUsedThisWeek = await prisma.booking.findFirst({
+      where: {
+        userMembershipId: userMembership.id,
+        status: { not: "cancelled" },
+        startAt: { gte: dayStart, lt: dayEnd },
+      },
+    });
 
-  if (alreadyUsedThisWeek) {
-    throw new Error("Jadwal minggu ini sudah dipakai");
+    if (alreadyUsedThisWeek) {
+      throw new Error("Jadwal minggu ini sudah dipakai");
+    }
   }
 
   const court = await prisma.court.findUnique({ where: { id: courtId } });
