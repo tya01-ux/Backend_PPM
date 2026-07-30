@@ -1,6 +1,19 @@
 import { prisma } from "../lib/db.js";
 import { MembershipStatus, PaymentChannelType } from "@prisma/client";
 
+const parseHM = (hm: string): number => {
+  const [h = 0, m = 0] = hm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const getVenueOperatingHours = async (): Promise<{ openHour: string; closeHour: string }> => {
+  const venue = await prisma.venue.findFirst();
+  return {
+    openHour: venue?.openHour || "08:00",
+    closeHour: venue?.closeHour || "00:00",
+  };
+};
+
 export const validateMembershipSchedule = async (params: {
   courtId: number;
   dayOfWeek: number; // 0 = Minggu ... 6 = Sabtu
@@ -22,6 +35,24 @@ export const validateMembershipSchedule = async (params: {
     throw new Error("CONFLICT: Lapangan tidak tersedia");
   }
 
+
+  const { openHour, closeHour } = await getVenueOperatingHours();
+  const openMinutes = parseHM(openHour);
+  let closeMinutes = parseHM(closeHour);
+  if (closeMinutes <= openMinutes) closeMinutes += 24 * 60;
+
+  const [sh0 = 0, sm0 = 0] = startTime.split(":").map(Number);
+  const [eh0 = 0, em0 = 0] = endTime.split(":").map(Number);
+  const startMinutesOfDay = sh0 * 60 + sm0;
+  let endMinutesOfDay = eh0 * 60 + em0;
+  if (endMinutesOfDay <= startMinutesOfDay) endMinutesOfDay += 24 * 60; // nembus tengah malam
+
+  if (startMinutesOfDay < openMinutes || endMinutesOfDay > closeMinutes) {
+    throw new Error(
+      `CONFLICT: Jadwal tetap harus dalam jam operasional venue (${openHour} - ${closeHour})`
+    );
+  }
+
   const totalWeeks = Math.max(1, Math.ceil(membership.duration / 7));
 
   // Occurrence pertama dari dayOfWeek mulai HARI INI (bukan mundur ke masa lalu)
@@ -31,8 +62,8 @@ export const validateMembershipSchedule = async (params: {
   const diff = (dayOfWeek - firstOccurrence.getDay() + 7) % 7;
   firstOccurrence.setDate(firstOccurrence.getDate() + diff);
 
-  const [sh, sm] = startTime.split(":").map(Number) as [number, number];
-  const [eh, em] = endTime.split(":").map(Number) as [number, number];
+  const [sh = 0, sm = 0] = startTime.split(":").map(Number);
+  const [eh = 0, em = 0] = endTime.split(":").map(Number);
 
   const conflicts: { date: string; reason: string }[] = [];
 
@@ -94,6 +125,7 @@ export const validateMembershipSchedule = async (params: {
 export const createMembershipRegistration = async (data: {
   userId: number;
   membershipId: number;
+
   courtId?: number;
   dayOfWeek?: number;
   startTime?: string;
@@ -131,9 +163,7 @@ export const createMembershipRegistration = async (data: {
     data.startTime !== undefined ||
     data.endTime !== undefined;
 
-  if (membership.requiresFixedSchedule) {
-    // Paket fixed-schedule (Bronze/Silver/Gold) — jadwal WAJIB lengkap, tidak
-    // boleh sebagian atau kosong sama sekali.
+  if (hasSchedule) {
     if (
       data.courtId === undefined ||
       data.dayOfWeek === undefined ||
@@ -141,7 +171,7 @@ export const createMembershipRegistration = async (data: {
       !data.endTime
     ) {
       throw new Error(
-        "CONFLICT: courtId, dayOfWeek, startTime, dan endTime harus diisi lengkap untuk paket ini"
+        "CONFLICT: courtId, dayOfWeek, startTime, dan endTime harus diisi lengkap untuk jadwal tetap"
       );
     }
 
@@ -158,22 +188,16 @@ export const createMembershipRegistration = async (data: {
         "CONFLICT: Jadwal yang dipilih bentrok di beberapa minggu ke depan, silakan pilih jadwal lain"
       );
     }
-  } else if (hasSchedule) {
-    // Paket flexible (Platinum) — user bebas pilih slot nanti lewat halaman
-    // Booking, jadi jadwal tetap TIDAK BOLEH diisi saat registrasi.
-    throw new Error(
-      "CONFLICT: Paket ini tidak menggunakan jadwal tetap, silakan kosongkan pilihan jadwal"
-    );
   }
 
   return await prisma.membershipRegistration.create({
     data: {
       userId: data.userId,
       membershipId: data.membershipId,
-      courtId: membership.requiresFixedSchedule ? data.courtId ?? null : null,
-      dayOfWeek: membership.requiresFixedSchedule ? data.dayOfWeek ?? null : null,
-      startTime: membership.requiresFixedSchedule ? data.startTime ?? null : null,
-      endTime: membership.requiresFixedSchedule ? data.endTime ?? null : null,
+      courtId: data.courtId ?? null,
+      dayOfWeek: data.dayOfWeek ?? null,
+      startTime: data.startTime ?? null,
+      endTime: data.endTime ?? null,
       paymentMethod: data.paymentMethod ?? null,
       paymentChannelId: data.paymentChannelId ?? null,
       proofImageUrl: data.proofImage ?? null,
@@ -353,6 +377,6 @@ export const rejectMembershipRegistration = async (id: number, reason: string) =
       rejectedAt: new Date(),
       rejectReason: reason,
     },
-    include: { membership: true }, 
+    include: { membership: true }, // ✅ wajib biar notifikasi bisa baca nama paket
   });
 };
