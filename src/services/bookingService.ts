@@ -10,6 +10,27 @@ const generateBookingCode = (): string => {
   return `PUMA-${dd}${mm}${yy}-${rand}`;
 };
 
+// ✅ FIX UTAMA — harga PAKET FLAT sesuai poster harga (bukan court.price
+// dikali durasi). Sebelumnya createBooking & updateBooking menghitung
+// `court.price * duration` (40.000 x 2 jam = 80.000), padahal poster & UI
+// booking di frontend (StepKonfirmasiPembayaran.tsx -> HARGA_DURASI) sudah
+// menjanjikan harga paket 40.000/1 jam dan 70.000/2 jam ke user. Selisih itu
+// (80.000 vs 70.000) + adminFee 2.500 yang tidak pernah ditampilkan ke user
+// itulah yang bikin total di admin panel (82.500) beda dari yang dibayar
+// user (70.000). Nilai ini HARUS identik dengan HARGA_DURASI di frontend.
+const HARGA_DURASI: Record<number, number> = { 1: 40000, 2: 70000 };
+
+// Hitung harga booking dari harga paket flat. Untuk durasi di luar 1/2 jam
+// (belum ada paketnya), fallback ke court.price * duration supaya booking
+// tetap bisa dibuat, bukan malah gagal total.
+const hitungCourtPrice = (courtPricePerJam: number, duration: number) =>
+  HARGA_DURASI[duration] ?? courtPricePerJam * duration;
+
+// ✅ FIX — biaya admin dihapus (0), karena tidak pernah ditampilkan atau
+// disetujui user di halaman Konfirmasi & Pembayaran. User cuma pernah lihat
+// & setuju bayar sejumlah harga paket (Rp 40.000 / Rp 70.000) saja.
+const ADMIN_FEE = 0;
+
 export const autoExpireBookings = async () => {
   const now = new Date();
 
@@ -173,8 +194,11 @@ export const createBooking = async (data: {
   });
   if (conflict) throw new Error("Jadwal lapangan sudah dibooking");
 
-  const courtPrice = court.price * duration;
-  const adminFee = 2500;
+  // ✅ FIX: pakai harga paket flat (40.000/1 jam, 70.000/2 jam), BUKAN
+  // court.price * duration (yang menghasilkan 80.000 untuk 2 jam). Admin
+  // fee dihapus (0) karena tidak pernah ditampilkan/disetujui user.
+  const courtPrice = hitungCourtPrice(court.price, duration);
+  const adminFee = ADMIN_FEE;
   const bookingCode = generateBookingCode();
 
   return await prisma.booking.create({
@@ -236,12 +260,6 @@ export const createMembershipBooking = async (data: {
     throw new Error("Kamu tidak punya membership aktif");
   }
 
-  // ✅ Aturan slot beda tergantung tipe paket (membership.requiresFixedSchedule):
-  // - Fixed-schedule (Bronze/Silver/Gold): slot WAJIB persis sama dengan
-  //   jadwal tetap yang dikunci saat registrasi (lapangan, hari, jam).
-  // - Flexible (Platinum): tidak ada jadwal terkunci sama sekali, jadi tidak
-  //   ada yang perlu di-cocokkan — user bebas pilih lapangan/hari/jam apa
-  //   saja, cukup kuota yang jadi penentu.
   if (userMembership.membership.requiresFixedSchedule) {
     if (userMembership.courtId !== courtId) {
       throw new Error("Lapangan tidak sesuai jadwal tetap membershipmu");
@@ -258,10 +276,6 @@ export const createMembershipBooking = async (data: {
     }
   }
 
-  // ✅ Kuota dihitung ulang dari booking yang benar-benar ada (bukan counter
-  // manual) — konsisten sama getActiveUserMembershipByUserId di
-  // usermembershipservice.ts, biar gak ada celah "kepakai tapi gak kepotong".
-  // Berlaku sama untuk fixed maupun flexible — keduanya tetap dibatasi kuota.
   const bookingsUsed = await prisma.booking.count({
     where: {
       userMembershipId: userMembership.id,
@@ -273,11 +287,6 @@ export const createMembershipBooking = async (data: {
     throw new Error("Kuota membershipmu sudah habis bulan ini");
   }
 
-  // Guard "jadwal minggu ini udah dipakai" cuma relevan buat fixed-schedule
-  // (satu slot tetap yang sama tiap minggu, gak boleh dipakai 2x di tanggal
-  // yang sama). Member flexible sengaja TIDAK kena guard ini — dia boleh
-  // booking lebih dari sekali di hari yang sama selama kuotanya masih ada,
-  // karena memang tidak terikat satu slot mingguan.
   if (userMembership.membership.requiresFixedSchedule) {
     const dayStart = new Date(startAt);
     dayStart.setHours(0, 0, 0, 0);
@@ -374,12 +383,11 @@ export const updateBooking = async (
     });
     if (conflict) throw new Error("Jadwal lapangan sudah dibooking");
 
-    const courtPrice = court.price * duration;
-    const adminFee   = booking.payment?.adminFee ?? 2500;
+    const courtPrice = hitungCourtPrice(court.price, duration);
+    const adminFee   = ADMIN_FEE;
     const totalAmount = courtPrice + adminFee;
 
-    // ✅ FIX: pakai $transaction dengan callback biar return objek tunggal
-    // yang sudah include court, bukan array hasil transaksi
+
     return await prisma.$transaction(async (tx) => {
       const updatedBooking = await tx.booking.update({
         where: { id },
@@ -398,7 +406,7 @@ export const updateBooking = async (
       if (booking.payment) {
         await tx.payment.update({
           where: { bookingId: id },
-          data: { courtPrice, totalAmount },
+          data: { courtPrice, adminFee, totalAmount },
         });
       }
 
