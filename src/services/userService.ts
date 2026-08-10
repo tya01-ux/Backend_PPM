@@ -1,4 +1,5 @@
 import { prisma } from "../lib/db.js";
+import bcrypt from "bcrypt";
 
 // GET ALL USERS
 export const getAllUsers = async () => {
@@ -76,4 +77,31 @@ export const deleteUserById = async (id: number) => {
   return await prisma.user.delete({
     where: { id },
   });
+};
+
+// CHANGE OWN PASSWORD
+export const changeOwnPassword = async (
+  id: number,
+  oldPassword: string,
+  newPassword: string
+) => {
+  const user = await prisma.user.findUnique({ where: { id } });
+
+  if (!user) {
+    throw new Error("User tidak ditemukan");
+  }
+
+  const isMatch = await bcrypt.compare(oldPassword, user.password);
+  if (!isMatch) {
+    throw new Error("Password lama salah");
+  }
+
+  const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+  await prisma.user.update({
+    where: { id },
+    data: { password: hashedNewPassword },
+  });
+
+  return true;
 };

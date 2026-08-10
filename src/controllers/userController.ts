@@ -156,9 +156,9 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+// ===================== UPDATE OWN PROFILE =====================
 export const updateOwnProfile = async (req: Request, res: Response) => {
   try {
- 
     const userId = (req as any).user?.userId;
 
     if (!userId) {
@@ -208,6 +208,66 @@ export const updateOwnProfile = async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({
       message: "Gagal memperbarui profil",
+      error: error.message,
+    });
+  }
+};
+
+// ===================== CHANGE OWN PASSWORD =====================
+export const changeOwnPassword = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthenticated",
+      });
+    }
+
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        message: "Password lama dan password baru wajib diisi",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Password baru minimal 6 karakter",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User tidak ditemukan",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Password lama salah",
+      });
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedNewPassword },
+    });
+
+    return res.status(200).json({
+      message: "Password berhasil diubah",
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Gagal mengubah password",
       error: error.message,
     });
   }
