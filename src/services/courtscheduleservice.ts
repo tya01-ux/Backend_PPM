@@ -168,6 +168,7 @@ export const getCombinedTimeline = async (date: Date, courtId?: number) => {
   const bookingWhere: any = {
     startAt: { lte: endOfDay },
     endAt: { gte: startOfDay },
+    status: { not: "cancelled" },
   };
   if (courtId) bookingWhere.courtId = courtId;
 
